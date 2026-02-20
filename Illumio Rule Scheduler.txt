@@ -1,0 +1,88 @@
+# Project Handover Document: Illumio Rule Scheduler CLI
+# Target Audience: Claude (AI Assistant / Senior Developer)
+# Current Version: v3.2
+# Context: Development handover for future maintenance and feature expansion.
+
+## 1. Project Overview
+This Python script is an automation tool designed for Illumio Core (PCE). It provides a CLI interface for administrators to schedule when specific security rules (Rules) or rule sets (RuleSets) should be active (Enabled) or inactive (Disabled). It also includes a daemon mode (`--monitor`) meant to be run via Linux `systemd` to continuously enforce these schedules.
+
+## 2. Core Architecture & State Management
+The script operates completely statelessly regarding the PCE, relying on a local JSON database, but performs live syncs during UI rendering.
+* **config.json**: Stores PCE URL, Org ID, API Key, and API Secret. (Created via CLI option `0`).
+* **rule_schedules.json**: The core database. Uses the Rule/RuleSet `href` as the primary key.
+
+### Data Structure Example (`rule_schedules.json`):
+```json
+{
+    "/orgs/1/sec_policy/draft/rule_sets/272/sec_rules/1149": {
+        "type": "recurring",        // or "one_time" (for Expiration mode)
+        "name": "Allow Web Access", // Fallback name
+        "is_ruleset": false,        // true if the href points to a RuleSet
+        "action": "allow",          // "allow" (enable in window) or "block"
+        "days": ["Monday", "Tuesday"], 
+        "start": "08:00",
+        "end": "18:00",
+        "expire_at": "2026-12-31T23:59", // Only if type == "one_time"
+        "detail_rs": "CoreServices | VMware", // Parent RuleSet name for grouping UI
+        "detail_src": "role:Web", 
+        "detail_dst": "role:DB",
+        "detail_svc": "TCP/443"
+    }
+}
+3. Key Design Decisions & API Constraints (CRITICAL)
+When modifying this script, keep the following Illumio API constraints in mind:
+
+Provisioning (Atomic Commits):
+
+Illumio requires changes made in the draft state to be provisioned to take effect.
+
+CRITICAL: We ALWAYS use change_subset targeting the specific parent RuleSet during the /sec_policy POST request. DO NOT provision the entire PCE, as it might accidentally commit other administrators' unfinished drafts.
+
+Function: provision_changes(rs_href) and toggle_and_provision(...).
+
+Live State Validation (Ghost Rules):
+
+Users might delete a Rule in the Illumio Web UI while it's still scheduled in our rule_schedules.json.
+
+In the list_schedules_grouped() UI, the script performs a live GET to the /active/ href to verify existence. If it returns 404, it marks the UI as [已刪除] (Ghost Rule).
+
+Note Integration (Description Tagging):
+
+To give administrators visibility in the Web UI, the script appends a tag to the Rule's description field (e.g., \n[📅 排程: 每天 08:00-18:00 啟動]).
+
+Function: update_rule_note(). It uses Regex to clean up old tags before appending new ones to prevent duplication. Updating the description also requires a provision trigger.
+
+Dual Indicators in UI:
+
+★ (Yellow Star): Indicates the item itself has a schedule.
+
+● (Cyan Dot): Used in RuleSet rows to indicate the RuleSet itself is NOT scheduled, but one or more of its child Rules ARE scheduled.
+
+4. Main Loop Logic (check_logic)
+Run every X minutes via systemd (--monitor).
+
+Iterates through rule_schedules.json.
+
+Calculates target_state (True/False) based on current time and recurring/one_time logic.
+
+If one_time and expired -> Forces target_state to False, triggers provision, cleans up the Note, and deletes the entry from the JSON DB.
+
+Compares target_state against the live /active/ PCE state.
+
+If mismatched, PUTs the new state to /draft/ and POSTs to provision.
+
+5. UI / CLI Workflow
+clean_input(): Handles backspace characters (\x08, \x7f) for cross-platform SSH terminal compatibility.
+
+paginate_and_select(): A universal pagination engine. Standardizes all list selections to 50 items per page with (n)ext, (p)rev, and (q)uit controls.
+
+Color Engine: Uses raw ANSI escape codes (\033[...]) so it doesn't require third-party libraries like colorama.
+
+6. Handover Instructions for Claude
+Please review the attached illumio_scheduler.py code.
+
+Maintain the pure standard library dependency (requests is the only external lib). Do not introduce heavy frameworks unless explicitly requested.
+
+When adding new features, preserve the try-except blocks in the main_menu and CLI loops to ensure the daemon mode never crashes silently.
+
+Always ensure any draft modifications are followed by a targeted change_subset provision.

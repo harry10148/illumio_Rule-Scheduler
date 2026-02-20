@@ -1,0 +1,45 @@
+# ===========================
+# Illumio Rule Scheduler
+# ===========================
+
+# API credentials (contains plaintext API key & secret)
+config.json
+
+# Schedule database (runtime state, per-instance)
+rule_schedules.json
+
+# Daemon / service logs
+daemon_stdout.log
+daemon_stderr.log
+*.log
+
+# ===========================
+# Python
+# ===========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.venv/
+env/
+
+# ===========================
+# IDE / Editor
+# ===========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===========================
+# Docs (temporary extraction outputs)
+# ===========================
+docs/api_extract_output.txt
+docs/extract_api_sections.py

@@ -1,0 +1,18 @@
+[Unit]
+Description=Illumio Rule Scheduler Daemon
+After=network.target
+
+[Service]
+Type=simple
+# Update the paths below to match your installation directory
+WorkingDirectory=/opt/illumio_rule_scheduler
+ExecStart=/usr/bin/python3 /opt/illumio_rule_scheduler/illumio_scheduler.py --monitor
+Restart=always
+RestartSec=30
+Environment="ILLUMIO_CHECK_INTERVAL=300"
+# Recommended: Run as a non-root user
+# User=illumio
+# Group=illumio
+
+[Install]
+WantedBy=multi-user.target
