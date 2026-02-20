@@ -1,11 +1,12 @@
-# 🕒 Illumio Rule Scheduler
+# Illumio Rule Scheduler (v4.1.0)
 
+![Version](https://img.shields.io/badge/Version-v4.1.0-blue)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python&logoColor=white)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-orange)
 ![Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen)
-![Status](https://img.shields.io/badge/Status-Production%20Ready-green)
 
-> **[🇹🇼 繁體中文版](README.zh-TW.md)**
+| [English](README.md) | [繁體中文](README.zh-TW.md) |
+
+---
 
 An automated rule scheduling tool for **Illumio Core (PCE)**. Supports both **GUI** and **CLI** modes with **zero external dependencies** — runs on any system with Python 3.8+ out of the box.
 

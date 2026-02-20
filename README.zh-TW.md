@@ -1,11 +1,12 @@
-# 🕒 Illumio Rule Scheduler
+# Illumio Rule Scheduler (v4.1.0)
 
+![Version](https://img.shields.io/badge/Version-v4.1.0-blue)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python&logoColor=white)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-orange)
 ![Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen)
-![Status](https://img.shields.io/badge/Status-Production%20Ready-green)
 
-> **[🇺🇸 English Version](README.md)**
+| [English](README.md) | [繁體中文](README.zh-TW.md) |
+
+---
 
 針對 **Illumio Core (PCE)** 設計的自動化排程工具。支援 **GUI 圖形介面**與 **CLI 命令列**雙模式，**零外部依賴**（僅使用 Python 標準庫），可直接部署於任何安裝了 Python 3.8+ 的環境。
 
