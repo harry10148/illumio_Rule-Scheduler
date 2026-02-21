@@ -75,55 +75,66 @@ pip install flask    # optional, for Web GUI only
 
 ---
 
-## 🚀 Usage
+## 🚀 User Guide
 
-### Web GUI Mode (recommended for desktop)
+The tool supports three operational modes.
+
+### 1. Web GUI Mode (Recommended)
+Launch the Flask-powered Web GUI for a complete visual experience:
 ```bash
-python illumio_scheduler.py --gui
+python illumio_scheduler.py --gui --port 5000
 ```
-- Starts Flask server on `http://localhost:5000`
-- Auto-opens browser
-- Dark-themed single-page application
+- **Interface**: Opens a dark-themed single-page application in your default browser.
+- **Browse & Add**: Search through your RuleSets. Click a RuleSet to view its rules, select the desired target, and click "Schedule Selected".
+- **Schedules Tab**: View, edit, or delete existing schedules. Supports checkbox multi-selection for bulk deletion.
+- **Logs & Check**: Manually trigger the schedule engine using "Run Manual Check Now" and view the background execution logs directly in the browser.
+- **Settings**: Configure your PCE URL, Org ID, and API credentials securely.
 
-### CLI Mode (recommended for SSH / terminal)
+### 2. CLI Mode (For SSH / Terminal)
+Designed for environments without desktop access. Run the script without arguments:
 ```bash
 python illumio_scheduler.py
 ```
-**Main Menu:**
-```
-=== Illumio Scheduler v4.2 (Hybrid UI) ===
-0. Configure API
-1. Schedule Management (Browse/List/Edit/Delete)
-2. Run Check Now
-3. Open Web GUI
-4. Language [EN]
-q. Quit
-```
+**Interactive Main Menu:**
+- **`0. Configure API`**: Basic setup prompt for PCE credentials.
+- **`1. Schedule Management`**: Opens the unified dashboard.
+  - Type `a` to browse and add a new schedule with a paginated wizard.
+  - Type `e <ID>` to edit an existing schedule's time window.
+  - Type `d <ID>` (or `d 1,2,3`) to delete schedules.
+- **`2. Run Check Now`**: Manually execute a schedule check and print the logs to the console.
+- **`3. Open Web GUI`**: Switches the running instance into Web GUI mode.
+- **`4. Language`**: Toggles the CLI language between English and Traditional Chinese.
 
-### Daemon Mode (background monitoring)
+### 3. Daemon Mode (Background Monitoring)
+This mode runs continuously in the background to automatically apply your schedules:
 ```bash
 python illumio_scheduler.py --monitor
 ```
-> Runs the schedule engine in a loop (default: every 300 seconds)
+> The engine wakes up (default: every 300 seconds), compares the current time against your database, toggles the rule statuses via the PCE API, provisions the changes, and goes back to sleep.
 
 ---
 
-## ⚙️ Background Service Deployment
+## ⚙️ Deployment Scripts & Mechanics
 
-### Windows (NSSM recommended)
+To ensure schedules trigger reliably over time, the script must run continuously as a background service. We provide two deployment wrappers.
 
-1. Download [NSSM](http://nssm.cc/download)
-2. Run as **Administrator**:
+### Windows: NSSM (`deploy_windows.ps1`)
+
+**Mechanics**: Windows requires an executable wrapper to treat a simple Python script as a background Service. We utilize **[NSSM (Non-Sucking Service Manager)](http://nssm.cc/)** to wrap `python illumio_scheduler.py --monitor`. NSSM automatically captures stdout/stderr, redirects it to the Windows Event Log, and guarantees the process is restarted if it crashes.
+
+**Installation**:
+1. Download NSSM and extract `nssm.exe`.
+2. Run PowerShell as **Administrator**:
    ```powershell
    .\deploy\deploy_windows.ps1 -NssmPath "C:\path\to\nssm.exe"
    ```
-3. The service installs and starts automatically (name: `IllumioScheduler`)
+3. The script automatically creates a service named `IllumioScheduler`, configures it to start on boot, and launches it immediately.
 
-**Alternative: Task Scheduler**
-- Create Task → Trigger: At system startup → Action: `python illumio_scheduler.py --monitor`
+### Linux: Systemd (`illumio-scheduler.service`)
 
-### Linux (Systemd)
+**Mechanics**: Uses native Linux init daemon integration. The provided `.service` file instructs systemd to execute the script in `--monitor` mode using the system python binary, defines the working directory context, and specifies `Restart=always` to ensure high availability.
 
+**Installation**:
 ```bash
 sudo cp deploy/illumio-scheduler.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -304,55 +315,66 @@ pip install flask    # 選用，僅 Web GUI 需要
 
 ---
 
-## 🚀 使用方式
+## 🚀 使用指南 (User Guide)
 
-### Web GUI 模式（推薦桌面環境）
+本工具支援三種執行模式，以適應不同的操作環境。
+
+### 1. Web GUI 模式（推薦桌面環境）
+開啟由 Flask 驅動的網頁圖形介面，獲得最完整的視覺體驗：
 ```bash
-python illumio_scheduler.py --gui
+python illumio_scheduler.py --gui --port 5000
 ```
-- 啟動 Flask 服務於 `http://localhost:5000`
-- 自動開啟瀏覽器
-- 深色主題單頁應用程式
+- **介面**：自動在預設瀏覽器開啟深色主題的單頁應用程式 (SPA)。
+- **Browse & Add (瀏覽與新增)**：搜尋並檢視您的規則集 (RuleSets)。點擊規則集以查看內部規則，選定目標後按下「Schedule Selected」即可設定排程。
+- **Schedules (排程管理)**：檢視、修改或刪除已設定的排程。支援勾選多筆排程進行批次刪除。
+- **Logs & Check (日誌與手動檢查)**：透過「Run Manual Check Now」按鈕可手動觸發排程引擎，並直接在瀏覽器中觀看背景執行的詳細日誌。
+- **Settings (設定)**：安全地設定您的 PCE URL、Org ID 以及 API 憑證。
 
-### CLI 模式（推薦 SSH / 終端機）
+### 2. CLI 模式（推薦 SSH / 終端機）
+專為無桌面 (GUI) 環境設計。直接執行腳本即可進入互動式選單：
 ```bash
 python illumio_scheduler.py
 ```
-**主選單：**
-```
-=== Illumio Scheduler v4.2 (Hybrid UI) ===
-0. Configure API（設定 API）
-1. Schedule Management（排程管理）
-2. Run Check Now（立即檢查）
-3. Open Web GUI（開啟 Web GUI）
-4. Language [EN]（語系切換）
-q. Quit（離開）
-```
+**互動式主選單：**
+- **`0. Configure API (設定 API)`**：輸入 PCE 驗證資訊的基礎設定。
+- **`1. Schedule Management (排程管理)`**：開啟整合式控制面板。
+  - 輸入 `a` 以分頁導覽模式瀏覽並新增排程。
+  - 輸入 `e <ID>` 修改現有排程的時間區間。
+  - 輸入 `d <ID>`（或 `d 1,2,3`）刪除排程。
+- **`2. Run Check Now (立即檢查)`**：手動執行一次排程檢查，並將日誌輸出至終端機。
+- **`3. Open Web GUI (開啟 Web GUI)`**：將目前的執行實例切換為 Web GUI 模式。
+- **`4. Language [ZH] (語系切換)`**：在英文與繁體中文之間切換 CLI 的語言顯示。
 
-### Daemon 模式（背景監控）
+### 3. Daemon 模式（背景監控）
+此模式會在背景持續運行，確保您的排程時間一到就會自動生效：
 ```bash
 python illumio_scheduler.py --monitor
 ```
-> 以迴圈方式執行排程引擎（預設每 300 秒）
+> 引擎會定時喚醒（預設：每 300 秒），比對目前時間與資料庫中的排程設定，透過 PCE API 切換規則啟用狀態並自動發布，接著繼續休眠。
 
 ---
 
-## ⚙️ 背景服務部署
+## ⚙️ 部署腳本與原理解析
 
-### Windows（建議使用 NSSM）
+為了確保排程能隨著時間精準觸發，腳本必須作為背景服務 (Background Service) 持續運行。我們針對主流作業系統提供了相對應的部署解決方案。
 
-1. 下載 [NSSM](http://nssm.cc/download)
-2. 以 **系統管理員** 身份執行：
+### Windows: NSSM 封裝 (`deploy_windows.ps1`)
+
+**原理解析**：Windows 系統需要透過特製的封裝程式才能將一般的 Python 腳本當作「Windows 服務」執行。我們利用 **[NSSM (Non-Sucking Service Manager)](http://nssm.cc/)** 來封裝 `python illumio_scheduler.py --monitor`。NSSM 會自動攔截腳本的標準輸出/錯誤 (stdout/stderr) 並將其導向 Windows 事件檢視器 (Event Log)，同時保證程式崩潰時會自動重新啟動。
+
+**部署步驟**：
+1. 下載 NSSM 並將 `nssm.exe` 解壓縮至任意安全目錄。
+2. 以 **系統管理員** 身份開啟 PowerShell 並執行：
    ```powershell
    .\deploy\deploy_windows.ps1 -NssmPath "C:\path\to\nssm.exe"
    ```
-3. 服務將自動安裝並啟動（名稱：`IllumioScheduler`）
+3. 腳本會自動建立一個名為 `IllumioScheduler` 的服務，設定為開機自動延遲啟動，並立即啟動它。
 
-**替代方案：工作排程器**
-- 建立工作 → 觸發程式：系統啟動時 → 動作：`python illumio_scheduler.py --monitor`
+### Linux: Systemd 守護行程 (`illumio-scheduler.service`)
 
-### Linux（Systemd）
+**原理解析**：利用 Linux 原生的系統初始化與守護進程管理工具 `systemd`。提供的 `.service` unit 檔案明確指示了以 `--monitor` 模式啟動腳本、指定工作目錄 (Working Directory)，並設定 `Restart=always`，確保服務具備高可用性，即便因為意外中止也會立刻被系統重新拉起。
 
+**部署步驟**：
 ```bash
 sudo cp deploy/illumio-scheduler.service /etc/systemd/system/
 sudo systemctl daemon-reload
