@@ -429,7 +429,7 @@ class CLI:
             if rs_entry:
                 h, c, act = rs_entry
                 rid = Colors.id(f"{extract_id(h):<6}")
-                mark = Colors.mark_self()
+                mark = f"{Colors.YELLOW}★{Colors.RESET}"
                 
                 live_res = self.pce.get_live_item(h)
                 if live_res and live_res.status_code == 200:
@@ -454,10 +454,14 @@ class CLI:
                     time_str = f"Until {c['expire_at'].replace('T', ' ')}"
 
                 print(f" {mark}  | {rid} | {'RS':<4} | {display_name} | {mode} | {time_str}")
+            else:
+                if group['rules']:
+                    name = truncate(f"[RS] {rs_name}", 55)
+                    print(f" {' ':1}  | {' ':6} | {'    '} | {Colors.BOLD}{Colors.GREY}{name:<55}{Colors.RESET} | {' ':10} | {' '}")
 
             for h, c, act in group['rules']:
                 rid = Colors.id(f"{extract_id(h):<6}")
-                mark = Colors.mark_child()
+                mark = f"{Colors.CYAN}●{Colors.RESET}"
                 
                 live_res = self.pce.get_live_item(h)
                 if live_res and live_res.status_code == 200:
@@ -470,17 +474,19 @@ class CLI:
                     desc = r_obj.get('description', '').strip()
                     if desc and desc != '-':
                         desc = desc.split('\n')[0]
-                        rule_info = f"{desc} | {src}->{dst}"
+                        rule_info = f"{desc[:15]} | {src}->{dst}"
                     else:
-                        rule_info = f"{src} -> {dst} ({svc})"
+                        rule_info = f"{src}->{dst}"
+                        if svc != "All Services":
+                            rule_info += f" ({svc})"
                         
-                    raw_name = truncate(f"└ [Rule] {rs_name[:12]}... | {rule_info}", 55)
+                    raw_name = truncate(f"  └─ [Rule] {rule_info}", 55)
                     display_name = f"{Colors.GREY}{raw_name:<55}{Colors.RESET}"
                 elif live_res is None:
-                    raw_name = truncate(f"└ [Rule] {rs_name[:15]} | (Failed)", 55)
+                    raw_name = truncate(f"  └─ [Rule] {c.get('name', 'Rule')} (Failed)", 55)
                     display_name = f"{Colors.YELLOW}{raw_name:<55}{Colors.RESET}"
                 else:
-                    raw_name = truncate(f"└ [Rule] {rs_name[:15]} | {t('list_rule_deleted')}", 55)
+                    raw_name = truncate(f"  └─ [Rule] {t('list_rule_deleted')}", 55)
                     display_name = f"{Colors.RED}{raw_name:<55}{Colors.RESET}"
 
                 if c['type'] == 'recurring':
