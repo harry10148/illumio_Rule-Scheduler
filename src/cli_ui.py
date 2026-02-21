@@ -419,7 +419,7 @@ class CLI:
             else: groups[rs_name]['rules'].append(entry_data)
                 
         print("\n" + "="*120)
-        print(f"{t('hdr_sch'):<3} | {t('hdr_id'):<10} | {t('list_type'):<6} | {t('list_hierarchy'):<50} | {t('list_mode'):<15} | {t('list_timing')}")
+        print(f"{t('hdr_sch'):<3} | {t('hdr_id'):<6} | {t('list_type'):<4} | {t('list_hierarchy'):<55} | {t('list_mode'):<10} | {t('list_timing')}")
         print("-" * 120)
 
         for rs_name in sorted(groups.keys()):
@@ -428,55 +428,60 @@ class CLI:
             
             if rs_entry:
                 h, c, act = rs_entry
-                rid = Colors.id(extract_id(h))
+                rid = Colors.id(f"{extract_id(h):<6}")
                 mark = Colors.mark_self()
                 
                 live_res = self.pce.get_live_item(h)
                 if live_res and live_res.status_code == 200:
                     live_name = live_res.json().get('name', c['name'])
-                    display_name = truncate(f"[RS] {live_name}", 50)
+                    raw_name = truncate(f"[RS] {live_name}", 55)
+                    display_name = f"{Colors.BOLD}{raw_name:<55}{Colors.RESET}"
                 elif live_res is None:
-                    display_name = truncate(f"[RS] {c.get('name', rs_name)} {Colors.YELLOW}{t('list_conn_fail')}{Colors.RESET}", 50)
+                    raw_name = truncate(f"[RS] {c.get('name', rs_name)} (Failed)", 55)
+                    display_name = f"{Colors.YELLOW}{raw_name:<55}{Colors.RESET}"
                 else:
-                    display_name = f"{Colors.RED}{t('list_deleted')}{Colors.RESET}"
+                    raw_name = truncate(f"[RS] {t('list_deleted')}", 55)
+                    display_name = f"{Colors.RED}{raw_name:<55}{Colors.RESET}"
 
                 if c['type'] == 'recurring':
-                    mode = Colors.action(act)
+                    mode_raw = t('sch_action_enable') if act == 'allow' else t('sch_action_disable')
+                    mode_pad = f"{mode_raw:<10}"
+                    mode = f"{Colors.GREEN}{mode_pad}{Colors.RESET}" if act == 'allow' else f"{Colors.RED}{mode_pad}{Colors.RESET}"
                     d_str = t('action_everyday') if len(c['days'])==7 else ",".join([d[:3] for d in c['days']])
                     time_str = f"{d_str} {c['start']}-{c['end']}"
                 else:
-                    mode = f"{Colors.RED}EXPIRE{Colors.RESET}"
+                    mode = f"{Colors.RED}EXPIRE    {Colors.RESET}"
                     time_str = f"Until {c['expire_at'].replace('T', ' ')}"
 
-                print(f" {mark}  | {rid:<20} | {'RS':<6} | {Colors.BOLD}{display_name:<50}{Colors.RESET} | {mode:<25} | {time_str}")
-            else:
-                if group['rules']:
-                    name = truncate(f"[RS] {rs_name}", 50)
-                    print(f"    | {'':<10} | {'':<6} | {Colors.BOLD}{Colors.GREY}{name:<50}{Colors.RESET} | {'':<15} |")
+                print(f" {mark}  | {rid} | {'RS':<4} | {display_name} | {mode} | {time_str}")
 
             for h, c, act in group['rules']:
-                rid = Colors.id(extract_id(h))
+                rid = Colors.id(f"{extract_id(h):<6}")
                 mark = Colors.mark_child()
-                tree_prefix = f" {Colors.YELLOW}└──{Colors.RESET} "
                 
                 live_res = self.pce.get_live_item(h)
                 if live_res and live_res.status_code == 200:
                     live_desc = live_res.json().get('description') or f"Rule {extract_id(h)}"
-                    display_name = tree_prefix + truncate(live_desc, 45)
+                    raw_name = truncate(f"[RS] {rs_name[:15]} └─ {live_desc}", 55)
+                    display_name = f"{Colors.GREY}{raw_name:<55}{Colors.RESET}"
                 elif live_res is None:
-                    display_name = tree_prefix + f"{c.get('name', 'Rule')} {Colors.YELLOW}{t('list_conn_fail')}{Colors.RESET}"
+                    raw_name = truncate(f"[RS] {rs_name[:15]} └─ {c.get('name', 'Rule')} (Failed)", 55)
+                    display_name = f"{Colors.YELLOW}{raw_name:<55}{Colors.RESET}"
                 else:
-                    display_name = tree_prefix + f"{Colors.RED}{t('list_rule_deleted')}{Colors.RESET}"
+                    raw_name = truncate(f"[RS] {rs_name[:15]} └─ {t('list_rule_deleted')}", 55)
+                    display_name = f"{Colors.RED}{raw_name:<55}{Colors.RESET}"
 
                 if c['type'] == 'recurring':
-                    mode = Colors.action(act)
+                    mode_raw = t('sch_action_enable') if act == 'allow' else t('sch_action_disable')
+                    mode_pad = f"{mode_raw:<10}"
+                    mode = f"{Colors.GREEN}{mode_pad}{Colors.RESET}" if act == 'allow' else f"{Colors.RED}{mode_pad}{Colors.RESET}"
                     d_str = t('action_everyday') if len(c['days'])==7 else ",".join([d[:3] for d in c['days']])
                     time_str = f"{d_str} {c['start']}-{c['end']}"
                 else:
-                    mode = f"{Colors.RED}EXPIRE{Colors.RESET}"
+                    mode = f"{Colors.RED}EXPIRE    {Colors.RESET}"
                     time_str = f"Until {c['expire_at'].replace('T', ' ')}"
                 
-                print(f" {mark}  | {rid:<20} | {'Rule':<6} | {display_name:<60} | {mode:<25} | {time_str}")
+                print(f" {mark}  | {rid} | {'Rule':<4} | {display_name} | {mode} | {time_str}")
                 
         print("="*120)
 
