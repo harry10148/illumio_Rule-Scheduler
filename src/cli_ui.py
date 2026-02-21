@@ -104,6 +104,9 @@ class CLI:
             if self.cfg.save(url, org, key, secret):
                 print(f"{Colors.GREEN}[+] 設定已儲存。{Colors.RESET}")
 
+    # ==========================================
+    # Formatters
+    # ==========================================
     def format_ruleset_row(self, idx, rs):
         r_count = len(rs.get('rules', []))
         status = Colors.status(rs.get('enabled'))
@@ -137,9 +140,36 @@ class CLI:
         
         return f"{idx:<4} | {mark} | {rid:<18} | {status:<15} | {note:<30} | {src:<15} | {dst:<15} | {svc}"
 
-    def browse_and_select_ui(self):
+    # ==========================================
+    # Unified Schedule Management (Options 1+2+3 + Edit)
+    # ==========================================
+    def schedule_management_ui(self):
+        """Consolidated schedule management: Browse/Add, List, Edit, Delete"""
+        while True:
+            print(f"\n{Colors.HEADER}=== 排程管理 ==={Colors.RESET}")
+            print(f"  提示: {Colors.YELLOW}★{Colors.RESET}=規則集排程, {Colors.CYAN}●{Colors.RESET}=僅子規則排程")
+            print(f"  1. 瀏覽與{Colors.GREEN}新增{Colors.RESET}排程")
+            print(f"  2. 列表已排程項目 (Grouped View)")
+            print(f"  3. {Colors.CYAN}修改{Colors.RESET}排程")
+            print(f"  4. {Colors.RED}刪除{Colors.RESET}排程")
+            print(f"  q. 返回主選單")
+            
+            ans = clean_input(input(">> "))
+            if ans.lower() in ['q', 'b', '']: return
+            
+            try:
+                if ans == '1': self._browse_and_add()
+                elif ans == '2': self._list_grouped()
+                elif ans == '3': self._edit_schedule()
+                elif ans == '4': self._delete_schedule()
+            except Exception as e:
+                import traceback
+                print(f"{Colors.RED}[ERROR] {e}{Colors.RESET}")
+                traceback.print_exc()
+
+    # ── 1. Browse & Add ──
+    def _browse_and_add(self):
         print(f"\n{Colors.HEADER}--- 瀏覽與新增排程 (輸入 q 返回) ---{Colors.RESET}")
-        print(f"提示: {Colors.YELLOW}★{Colors.RESET}=規則集排程, {Colors.CYAN}●{Colors.RESET}=僅子規則排程")
         
         raw = clean_input(input("請輸入 ID 或 關鍵字 (直接按 Enter 瀏覽全部): "))
         if raw.lower() in ['q', 'b']: return
@@ -204,33 +234,80 @@ class CLI:
             print(f"{Colors.YELLOW}[!] 警告: 此規則已存在排程設定。將覆蓋舊設定。{Colors.RESET}")
             if clean_input(input("確認? (y/n): ")).lower() != 'y': return
 
+        db_entry, note_msg = self._collect_schedule_params(target_name, is_rs, meta_rs, meta_src, meta_dst, meta_svc)
+        if not db_entry: return
+
+        self.db.put(target_href, db_entry)
+        self.pce.update_rule_note(target_href, note_msg)
+        print(f"\n{Colors.GREEN}[+] 排程已儲存並寫入 Note! (ID: {extract_id(target_href)}){Colors.RESET}")
+
+    # ── Shared: Collect Schedule Parameters ──
+    def _collect_schedule_params(self, target_name, is_rs, meta_rs, meta_src, meta_dst, meta_svc, existing=None):
+        """Returns (db_entry, note_msg) or (None, None) if cancelled"""
         print(f"\n[目標] {Colors.BOLD}{target_name}{Colors.RESET}")
         print(f"1. {Colors.GREEN}Schedule{Colors.RESET} (週期性排程)")
         print(f"2. {Colors.RED}Expiration{Colors.RESET} (時間到自動關閉並刪除排程)")
         
-        mode_sel = clean_input(input("選單 (q=返回) > "))
-        if mode_sel.lower() in ['q', 'b']: return
-
-        db_entry = {}
-        note_msg = ""
+        # Pre-select mode from existing config if editing
+        default_mode = ""
+        if existing:
+            default_mode = "1" if existing.get('type') == 'recurring' else "2"
+            print(f"{Colors.GREY}(目前: {'週期性排程' if default_mode == '1' else '到期自動關閉'}){Colors.RESET}")
+        
+        mode_sel = clean_input(input(f"選單 (q=返回) > "))
+        if mode_sel.lower() in ['q', 'b']: return None, None
+        if not mode_sel and default_mode: mode_sel = default_mode
 
         if mode_sel == '1':
             print(f"\n[行為] 1.{Colors.GREEN}啟動{Colors.RESET} (時間內開啟) / 2.{Colors.RED}關閉{Colors.RESET} (時間內關閉)")
+            default_act = ""
+            if existing and existing.get('type') == 'recurring':
+                default_act = "2" if existing.get('action') == 'block' else "1"
+                print(f"{Colors.GREY}(目前: {'關閉' if default_act == '2' else '啟動'}){Colors.RESET}")
+            
             act_in = clean_input(input(">> "))
-            if act_in.lower() in ['q', 'b']: return
+            if act_in.lower() in ['q', 'b']: return None, None
+            if not act_in and default_act: act_in = default_act
             act = 'block' if act_in == '2' else 'allow'
             act_str = "啟動" if act == 'allow' else "關閉"
 
-            print("[時間] 星期 (Mon,Tue...) [Enter=每天]:")
+            default_days = ""
+            if existing and existing.get('type') == 'recurring':
+                default_days = ",".join(existing.get('days', []))
+            print(f"[時間] 星期 (Mon,Tue...) [Enter=每天]:")
+            if default_days:
+                print(f"{Colors.GREY}(目前: {default_days}){Colors.RESET}")
             raw_days = clean_input(input(">> "))
-            if raw_days.lower() in ['q', 'b']: return
+            if raw_days.lower() in ['q', 'b']: return None, None
+            if not raw_days and default_days: raw_days = default_days
             days = [d.strip() for d in raw_days.split(',')] if raw_days else ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
             days_str = "每天" if not raw_days else raw_days
             
-            s_time = get_valid_time("開始 (HH:MM) [q=返回]: ")
-            if not s_time: return
-            e_time = get_valid_time("結束 (HH:MM) [q=返回]: ")
-            if not e_time: return
+            default_start = existing.get('start', '') if existing and existing.get('type') == 'recurring' else ''
+            default_end = existing.get('end', '') if existing and existing.get('type') == 'recurring' else ''
+            
+            prompt_s = f"開始 (HH:MM) [q=返回]"
+            if default_start: prompt_s += f" ({Colors.GREY}目前: {default_start}{Colors.RESET})"
+            prompt_s += ": "
+            s_time = clean_input(input(prompt_s))
+            if s_time.lower() in ['q', 'b']: return None, None
+            if not s_time and default_start: s_time = default_start
+            
+            prompt_e = f"結束 (HH:MM) [q=返回]"
+            if default_end: prompt_e += f" ({Colors.GREY}目前: {default_end}{Colors.RESET})"
+            prompt_e += ": "            
+            e_time = clean_input(input(prompt_e))
+            if e_time.lower() in ['q', 'b']: return None, None
+            if not e_time and default_end: e_time = default_end
+
+            # Validate time format
+            import datetime
+            try:
+                datetime.datetime.strptime(s_time, "%H:%M")
+                datetime.datetime.strptime(e_time, "%H:%M")
+            except ValueError:
+                print(f"{Colors.RED}[-] 時間格式錯誤。{Colors.RESET}")
+                return None, None
 
             db_entry = {
                 "type": "recurring", "name": target_name, "is_ruleset": is_rs, 
@@ -239,16 +316,27 @@ class CLI:
                 "detail_name": target_name
             }
             note_msg = f"[📅 排程: {days_str} {s_time}-{e_time} {act_str}]"
+            return db_entry, note_msg
 
         elif mode_sel == '2':
             import datetime
-            raw_ex = clean_input(input("過期時間 (YYYY-MM-DD HH:MM) [q=返回]: "))
-            if raw_ex.lower() in ['q', 'b']: return
+            default_expire = ''
+            if existing and existing.get('type') == 'one_time':
+                default_expire = existing.get('expire_at', '').replace('T', ' ')
+            
+            prompt_ex = "過期時間 (YYYY-MM-DD HH:MM) [q=返回]"
+            if default_expire: prompt_ex += f" ({Colors.GREY}目前: {default_expire}{Colors.RESET})"
+            prompt_ex += ": "
+            raw_ex = clean_input(input(prompt_ex))
+            if raw_ex.lower() in ['q', 'b']: return None, None
+            if not raw_ex and default_expire: raw_ex = default_expire
+            
             try:
                 ex_fmt = raw_ex.replace(" ", "T")
                 datetime.datetime.fromisoformat(ex_fmt)
             except ValueError:
-                return print(f"{Colors.RED}[-] 時間格式錯誤。{Colors.RESET}")
+                print(f"{Colors.RED}[-] 時間格式錯誤。{Colors.RESET}")
+                return None, None
 
             db_entry = {
                 "type": "one_time", "name": target_name, "is_ruleset": is_rs, 
@@ -257,12 +345,12 @@ class CLI:
                 "detail_name": target_name
             }
             note_msg = f"[⏳ 有效期限至: {raw_ex} 止]"
+            return db_entry, note_msg
+        
+        return None, None
 
-        self.db.put(target_href, db_entry)
-        self.pce.update_rule_note(target_href, note_msg)
-        print(f"\n{Colors.GREEN}[+] 排程已儲存並寫入 Note! (ID: {extract_id(target_href)}){Colors.RESET}")
-
-    def list_schedules_grouped(self):
+    # ── 2. List Grouped (with ★/● and fixed [已刪除] detection) ──
+    def _list_grouped(self):
         db_data = self.db.get_all()
         if not db_data: 
             return print(f"\n{Colors.YELLOW}[-] 目前沒有設定排程。{Colors.RESET}")
@@ -279,7 +367,7 @@ class CLI:
             else: groups[rs_name]['rules'].append(entry_data)
                 
         print("\n" + "="*120)
-        print(f"{'ID':<10} | {'Type':<6} | {'Hierarchy & Note (Desc)':<50} | {'Mode/Action':<15} | {'Time/Expiration'}")
+        print(f"{'Sch':<3} | {'ID':<10} | {'Type':<6} | {'Hierarchy & Note (Desc)':<50} | {'Mode/Action':<15} | {'Time/Expiration'}")
         print("-" * 120)
 
         for rs_name in sorted(groups.keys()):
@@ -289,13 +377,17 @@ class CLI:
             if rs_entry:
                 h, c, act = rs_entry
                 rid = Colors.id(extract_id(h))
+                mark = Colors.mark_self()
                 
                 live_res = self.pce.get_live_item(h)
-                if not live_res or live_res.status_code != 200:
-                    display_name = f"{Colors.RED}[已刪除] (規則已從 PCE 移除){Colors.RESET}"
-                else:
+                if live_res and live_res.status_code == 200:
                     live_name = live_res.json().get('name', c['name'])
                     display_name = truncate(f"[RS] {live_name}", 50)
+                elif live_res is None:
+                    # API connectivity issue — don't mark as deleted
+                    display_name = truncate(f"[RS] {c.get('name', rs_name)} {Colors.YELLOW}(連線失敗){Colors.RESET}", 50)
+                else:
+                    display_name = f"{Colors.RED}[已刪除] (規則已從 PCE 移除){Colors.RESET}"
 
                 if c['type'] == 'recurring':
                     mode = Colors.action(act)
@@ -305,22 +397,25 @@ class CLI:
                     mode = f"{Colors.RED}EXPIRE{Colors.RESET}"
                     time_str = f"Until {c['expire_at'].replace('T', ' ')}"
 
-                print(f"{rid:<20} | {'RS':<6} | {Colors.BOLD}{display_name:<50}{Colors.RESET} | {mode:<25} | {time_str}")
+                print(f" {mark}  | {rid:<20} | {'RS':<6} | {Colors.BOLD}{display_name:<50}{Colors.RESET} | {mode:<25} | {time_str}")
             else:
                 if group['rules']:
                     name = truncate(f"[RS] {rs_name}", 50)
-                    print(f"{'':<10} | {'':<6} | {Colors.BOLD}{Colors.GREY}{name:<50}{Colors.RESET} | {'':<15} |")
+                    print(f"    | {'':<10} | {'':<6} | {Colors.BOLD}{Colors.GREY}{name:<50}{Colors.RESET} | {'':<15} |")
 
             for h, c, act in group['rules']:
                 rid = Colors.id(extract_id(h))
-                live_res = self.pce.get_live_item(h)
+                mark = Colors.mark_child()
                 tree_prefix = f" {Colors.YELLOW}└──{Colors.RESET} "
                 
-                if not live_res or live_res.status_code != 200:
-                    display_name = tree_prefix + f"{Colors.RED}[已刪除] (規則失效){Colors.RESET}"
-                else:
+                live_res = self.pce.get_live_item(h)
+                if live_res and live_res.status_code == 200:
                     live_desc = live_res.json().get('description') or f"Rule {extract_id(h)}"
                     display_name = tree_prefix + truncate(live_desc, 45)
+                elif live_res is None:
+                    display_name = tree_prefix + f"{c.get('name', 'Rule')} {Colors.YELLOW}(連線失敗){Colors.RESET}"
+                else:
+                    display_name = tree_prefix + f"{Colors.RED}[已刪除] (規則失效){Colors.RESET}"
 
                 if c['type'] == 'recurring':
                     mode = Colors.action(act)
@@ -330,20 +425,60 @@ class CLI:
                     mode = f"{Colors.RED}EXPIRE{Colors.RESET}"
                     time_str = f"Until {c['expire_at'].replace('T', ' ')}"
                 
-                print(f"{rid:<20} | {'Rule':<6} | {display_name:<60} | {mode:<25} | {time_str}")
+                print(f" {mark}  | {rid:<20} | {'Rule':<6} | {display_name:<60} | {mode:<25} | {time_str}")
                 
         print("="*120)
 
-    def delete_schedule_ui(self):
-        self.list_schedules_grouped()
-        k = clean_input(input("輸入 ID 刪除 (q=返回): "))
+    # ── 3. Edit Schedule ──
+    def _edit_schedule(self):
+        self._list_grouped()
+        db_data = self.db.get_all()
+        if not db_data: return
+        
+        k = clean_input(input(f"\n輸入要{Colors.CYAN}修改{Colors.RESET}的 ID (q=返回): "))
         if k.lower() in ['q', 'b', '']: return
         
+        found = [x for x in db_data if extract_id(x) == k]
+        if not found:
+            return print(f"{Colors.RED}[-] 找不到該 ID 的排程。{Colors.RESET}")
+        
+        href = found[0]
+        existing = db_data[href]
+        
+        print(f"\n{Colors.CYAN}[*] 修改排程: {existing.get('detail_name', existing['name'])} (ID: {k}){Colors.RESET}")
+        print(f"{Colors.GREY}直接按 Enter 保留現有值{Colors.RESET}")
+        
+        target_name = existing.get('detail_name', existing.get('name', ''))
+        is_rs = existing.get('is_ruleset', False)
+        meta_rs = existing.get('detail_rs', '')
+        meta_src = existing.get('detail_src', 'All')
+        meta_dst = existing.get('detail_dst', 'All')
+        meta_svc = existing.get('detail_svc', 'All')
+        
+        db_entry, note_msg = self._collect_schedule_params(target_name, is_rs, meta_rs, meta_src, meta_dst, meta_svc, existing=existing)
+        if not db_entry: return
+        
+        self.db.put(href, db_entry)
+        self.pce.update_rule_note(href, note_msg)
+        print(f"\n{Colors.GREEN}[+] 排程已更新! (ID: {extract_id(href)}){Colors.RESET}")
+
+    # ── 4. Delete Schedule ──
+    def _delete_schedule(self):
+        self._list_grouped()
         db_data = self.db.get_all()
+        if not db_data: return
+        
+        k = clean_input(input(f"\n輸入要{Colors.RED}刪除{Colors.RESET}的 ID (q=返回): "))
+        if k.lower() in ['q', 'b', '']: return
+        
         found = [x for x in db_data if extract_id(x) == k]
         
         if found:
             href = found[0]
+            conf = db_data[href]
+            print(f"  目標: {conf.get('detail_name', conf['name'])} (ID: {k})")
+            if clean_input(input(f"  確定刪除? (y/n): ")).lower() != 'y': return
+            
             print("[*] 嘗試清除 Note 標記...")
             try:
                 self.pce.update_rule_note(href, "", remove=True)
@@ -354,6 +489,9 @@ class CLI:
         else:
             print(f"{Colors.RED}[-] 找不到該 ID。{Colors.RESET}")
 
+    # ==========================================
+    # Main Menu
+    # ==========================================
     def run(self, core_system=None):
         if not self.check_config_ready(): 
             self.setup_config_ui()
@@ -361,23 +499,19 @@ class CLI:
         self.pce.update_label_cache()
         
         while True:
-            print(f"\n{Colors.HEADER}=== Illumio Scheduler v4.1 (Hybrid UI) ==={Colors.RESET}")
+            print(f"\n{Colors.HEADER}=== Illumio Scheduler v4.2 (Hybrid UI) ==={Colors.RESET}")
             print("0. 設定 API")
-            print("1. 瀏覽與新增排程")
-            print("2. 列表 (Grouped View)")
-            print("3. 刪除排程")
-            print("4. 立即檢查")
-            print(f"5. {Colors.CYAN}開啟 GUI 圖形介面{Colors.RESET}")
+            print("1. 排程管理 (瀏覽/列表/修改/刪除)")
+            print("2. 立即檢查")
+            print(f"3. {Colors.CYAN}開啟 Web GUI{Colors.RESET}")
             print("q. 離開")
             ans = clean_input(input(">> "))
             
             try:
                 if ans == '0': self.setup_config_ui()
-                elif ans == '1': self.browse_and_select_ui()
-                elif ans == '2': self.list_schedules_grouped()
-                elif ans == '3': self.delete_schedule_ui()
-                elif ans == '4': self.engine.check(silent=False)
-                elif ans == '5':
+                elif ans == '1': self.schedule_management_ui()
+                elif ans == '2': self.engine.check(silent=False)
+                elif ans == '3':
                     if core_system:
                         print(f"{Colors.BLUE}[*] 啟動 Web GUI...{Colors.RESET}")
                         try:

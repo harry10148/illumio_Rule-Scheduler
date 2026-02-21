@@ -320,8 +320,19 @@ class PCEClient:
         return self.provision_changes(rs_href)
 
     def get_live_item(self, href):
+        """Try both active and draft paths to find the item"""
+        # Try active first (most common for status checks)
         active_href = href.replace("/draft/", "/active/")
-        return self._api_get(active_href)
+        res = self._api_get(active_href)
+        if res and res.status_code == 200:
+            return res
+        # Fallback to draft
+        draft_href = href.replace("/active/", "/draft/")
+        if draft_href != active_href:
+            res = self._api_get(draft_href)
+            if res and res.status_code == 200:
+                return res
+        return res  # return last response for error handling
 
 # ==========================================
 # 5. Schedule Engine (Core Logic)
