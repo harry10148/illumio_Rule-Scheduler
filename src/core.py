@@ -10,6 +10,7 @@ import urllib.request
 import urllib.error
 import ssl
 import base64
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Disable SSL verification globally for self-signed PCE certs
 _SSL_CTX = ssl.create_default_context()
@@ -20,6 +21,7 @@ _SSL_CTX.verify_mode = ssl.CERT_NONE
 # 0. Color Engine & Formatters (Shared)
 # ==========================================
 class Colors:
+    """ANSI color codes for CLI terminal output formatting."""
     HEADER = '\033[95m'
     BLUE = '\033[94m'
     CYAN = '\033[96m'
@@ -69,11 +71,13 @@ def extract_id(href):
 # 1. Config Manager
 # ==========================================
 class ConfigManager:
-    def __init__(self, config_path):
-        self.config_path = config_path
-        self.config = {}
+    """Manages the reading and writing of the local configuration file (config.json)."""
+    
+    def __init__(self, config_path: str):
+        self.config_path: str = config_path
+        self.config: Dict[str, Any] = {}
 
-    def load(self):
+    def load(self) -> bool:
         if os.path.exists(self.config_path):
             try:
                 with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -122,11 +126,13 @@ class ConfigManager:
 # 2. Schedule Database
 # ==========================================
 class ScheduleDB:
-    def __init__(self, db_path):
-        self.db_path = db_path
-        self.db = {}
+    """Manages the local JSON-based storage for configured rule schedules."""
+    
+    def __init__(self, db_path: str):
+        self.db_path: str = db_path
+        self.db: Dict[str, Any] = {}
 
-    def load(self):
+    def load(self) -> Dict[str, Any]:
         if os.path.exists(self.db_path):
             try:
                 with open(self.db_path, 'r', encoding='utf-8') as f: 
@@ -175,10 +181,11 @@ class ScheduleDB:
 # 3. HTTP Response Wrapper (replaces requests.Response)
 # ==========================================
 class APIResponse:
-    """Lightweight response wrapper mimicking requests.Response"""
-    def __init__(self, status_code, body=b''):
-        self.status_code = status_code
-        self._body = body
+    """Lightweight HTTP response wrapper mimicking the requests.Response object interface."""
+    
+    def __init__(self, status_code: int, body: bytes = b''):
+        self.status_code: int = status_code
+        self._body: bytes = body
     
     def json(self):
         return json.loads(self._body.decode('utf-8'))
@@ -191,13 +198,15 @@ class APIResponse:
 # 4. PCE API Client (stdlib only)
 # ==========================================
 class PCEClient:
-    def __init__(self, config_manager, timeout=30):
-        self.cfg = config_manager
-        self.timeout = timeout
-        self.label_cache = {}
-        self.ruleset_cache = []
+    """Handles all REST API communications with the Illumio Policy Compute Engine (PCE)."""
+    
+    def __init__(self, config_manager: ConfigManager, timeout: int = 30):
+        self.cfg: ConfigManager = config_manager
+        self.timeout: int = timeout
+        self.label_cache: Dict[str, str] = {}
+        self.ruleset_cache: List[Dict[str, Any]] = []
 
-    def _request(self, method, endpoint, payload=None):
+    def _request(self, method: str, endpoint: str, payload: Optional[Dict[str, Any]] = None) -> Optional[APIResponse]:
         """Core HTTP method using urllib.request"""
         if not self.cfg.is_ready(): return None
         url = f"{self.cfg.config['pce_url']}/api/v2{endpoint}"
@@ -412,21 +421,23 @@ class PCEClient:
 # 5. Schedule Engine (Core Logic)
 # ==========================================
 class ScheduleEngine:
+    """Analyzes schedule timings and executes API enforcement actions upon matching."""
+    
     DAY_MAP = {
         "mon": "monday", "tue": "tuesday", "wed": "wednesday", 
         "thu": "thursday", "fri": "friday", "sat": "saturday", "sun": "sunday"
     }
 
-    def __init__(self, db, pce_client):
-        self.db = db
-        self.pce = pce_client
+    def __init__(self, db: ScheduleDB, pce_client: PCEClient):
+        self.db: ScheduleDB = db
+        self.pce: PCEClient = pce_client
 
     @staticmethod
-    def normalize_day(day_str):
+    def normalize_day(day_str: str) -> str:
         d = day_str.lower().strip()
         return ScheduleEngine.DAY_MAP.get(d[:3], d)
 
-    def check(self, silent=False):
+    def check(self, silent: bool = False) -> List[str]:
         if not self.pce.cfg.is_ready(): 
             return []
             

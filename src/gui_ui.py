@@ -14,7 +14,7 @@ import src.i18n as i18n
 # Flask App Factory
 # ==========================================
 def create_app(core_system):
-    from flask import Flask, request, jsonify, Response
+    from flask import Flask, request, jsonify, Response, render_template_string
 
     app = Flask(__name__)
     cfg = core_system['cfg']
@@ -25,7 +25,7 @@ def create_app(core_system):
     # ── Serve SPA ──
     @app.route('/')
     def index():
-        return Response(_HTML_PAGE, content_type='text/html; charset=utf-8')
+        return render_template_string(_HTML_PAGE, t=i18n.t)
 
     # ── RuleSets (with pagination) ──
     @app.route('/api/rulesets')
@@ -74,7 +74,7 @@ def create_app(core_system):
             'id': extract_id(rs_href),
             'desc': '▶ [ENTIRE RULESET]',
             'enabled': rs.get('enabled', False),
-            'src': 'ALL', 'dst': 'ALL', 'svc': 'ALL',
+            'src': 'NA', 'dst': 'NA', 'svc': 'NA',
             'sch': 'star' if rs_href in db.get_all() else '',
             'is_ruleset': True,
             'prov': rs_prov,
@@ -104,12 +104,16 @@ def create_app(core_system):
         data = db.get_all()
         result = []
         for href, c in data.items():
+            is_rs = c.get('is_ruleset', False)
             entry = {
                 'href': href,
                 'id': extract_id(href),
-                'type': 'RS' if c.get('is_ruleset') else 'Rule',
+                'type': 'RS' if is_rs else 'Rule',
                 'rs_name': c.get('detail_rs', 'Unknown'),
                 'name': c.get('detail_name', c.get('name', '')),
+                'src': 'NA' if is_rs else c.get('detail_src', 'All'),
+                'dst': 'NA' if is_rs else c.get('detail_dst', 'All'),
+                'svc': 'NA' if is_rs else c.get('detail_svc', 'All'),
             }
             if c.get('type') == 'recurring':
                 entry['action'] = 'ALLOW' if c.get('action') == 'allow' else 'BLOCK'
@@ -273,20 +277,52 @@ _HTML_PAGE = r'''<!DOCTYPE html>
 <title>Illumio Rule Scheduler</title>
 <style>
 :root {
-  --bg-dark: #0f1117;
-  --bg-panel: #161b22;
-  --bg-card: #1c2333;
-  --bg-input: #21262d;
-  --fg: #e6edf3;
-  --fg-dim: #7d8590;
-  --accent: #58a6ff;
-  --accent2: #00d2ff;
-  --green: #3fb950;
-  --red: #f85149;
-  --gold: #d29922;
-  --border: #30363d;
+  --bg-dark: #F5F5F5;
+  --bg-panel: #FFFFFF;
+  --bg-card: #EAEBEB;
+  --bg-input: #FFFFFF;
+  --fg: #313638;
+  --fg-dim: #64686A;
+  --accent: #2D454C;
+  --accent2: #FF5500;
+  --green: #166644;
+  --red: #be122f;
+  --gold: #FFA22F;
+  --border: #D6D7D7;
   --radius: 8px;
 }
+
+[data-theme="dark"] {
+  --bg-dark: #1A2C32; /* Server Slate 120 */
+  --bg-panel: #24393F; /* Server Slate 110 */
+  --bg-card: #313638; /* Server Slate 100 */
+  --bg-input: #1A2C32;
+  --fg: #FFFFFF; /* White */
+  --fg-dim: #ADAFAF; /* Server Slate 40 */
+  --accent: #94CEE5; /* Cloud Cerulean 120 */
+  --accent2: #FFA22F; /* Circuit Gold 100 */
+  --green: #299b65; /* Safeguard Green 80 */
+  --red: #f43f51; /* Risk Red 80 */
+  --gold: #FFB74A; /* Circuit Gold 90 */
+  --border: #464A4C; /* Server Slate 90 */
+}
+
+/* Base style adjustments for dark theme */
+[data-theme="dark"] .log-panel {
+  background: #1A2C32;
+  color: #FFFFFF;
+}
+[data-theme="dark"] tr.selected {
+  background: #1c3a5e !important;
+}
+[data-theme="dark"] .btn-accent { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+[data-theme="dark"] .btn-accent:hover { background: #388bfd; border-color: #388bfd; }
+[data-theme="dark"] .header { background: #24393F; }
+[data-theme="dark"] table { background: #24393F; }
+[data-theme="dark"] th { background: #313638; color: #94CEE5; }
+[data-theme="dark"] .badge-on { background: rgba(41,155,101,0.15); color: #299b65; }
+[data-theme="dark"] .badge-off { background: rgba(244,63,81,0.15); color: #f43f51; }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
@@ -343,7 +379,7 @@ body {
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 /* ── Content ── */
-.content { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+.content { padding: 20px 24px; width: 100%; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
@@ -409,11 +445,11 @@ td {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 260px;
+  max-width: 50vw;
 }
 tr { cursor: pointer; transition: background 0.1s; }
 tr:hover { background: var(--bg-card); }
-tr.selected { background: #1c3a5e !important; }
+tr.selected { background: #C2E2F0 !important; }
 .badge {
   display: inline-block;
   padding: 2px 8px;
@@ -427,7 +463,7 @@ tr.selected { background: #1c3a5e !important; }
 
 /* ── Split Pane ── */
 .split-pane { display: flex; flex-direction: row; height: calc(100vh - 120px); }
-.left-pane { width: 340px; min-width: 200px; max-width: 600px; display: flex; flex-direction: column; }
+.left-pane { width: 500px; min-width: 300px; max-width: 80vw; display: flex; flex-direction: column; }
 .resizer { width: 8px; cursor: col-resize; background: transparent; transition: background 0.2s; margin-right: 8px; }
 .resizer:hover, .resizer.resizing { background: var(--accent); opacity: 0.5; }
 .right-pane { flex: 1; min-width: 300px; display: flex; flex-direction: column; overflow: hidden; }
@@ -553,21 +589,21 @@ tr.selected { background: #1c3a5e !important; }
 
 <!-- Header -->
 <div class="header">
-  <h1>🕒 Illumio Rule Scheduler</h1>
-  <span class="version">Web GUI</span>
-  <button class="stop-btn" onclick="stopServer()">⏹ Stop WebGUI</button>
+  <h1>🕒 {{ t('gui_title') }}</h1>
+  <span class="version">{{ t('gui_version') }}</span>
+  <button class="stop-btn" onclick="stopServer()">{{ t('gui_stop') }}</button>
 </div>
 
 <!-- Tabs -->
 <div class="tab-bar">
-  <button class="tab-btn active" onclick="showTab('browse')">📋 Browse & Add</button>
-  <button class="tab-btn" onclick="showTab('schedules')">⏱ Schedules</button>
-  <button class="tab-btn" onclick="showTab('logs')">📜 Logs & Check</button>
-  <button class="tab-btn" onclick="showTab('settings')">⚙ Settings</button>
+  <button class="tab-btn active" onclick="showTab('browse')">{{ t('gui_tab_browse') }}</button>
+  <button class="tab-btn" onclick="showTab('schedules')">{{ t('gui_tab_schedules') }}</button>
+  <button class="tab-btn" onclick="showTab('logs')">{{ t('gui_tab_logs') }}</button>
+  <button class="tab-btn" onclick="showTab('settings')">{{ t('gui_tab_settings') }}</button>
 </div>
 
 <div style="padding:6px 20px;font-size:12px;color:var(--fg-dim);background:var(--bg-panel);border-bottom:1px solid var(--border)">
-  Hint: <span style="color:var(--gold)">★</span> = RuleSet scheduled &nbsp;&nbsp; <span style="color:var(--accent)">●</span> = Child rule only
+  {{ t('gui_hint')|safe }}
 </div>
 
 <div class="content">
@@ -578,15 +614,15 @@ tr.selected { background: #1c3a5e !important; }
   <div class="split-pane">
     <div class="left-pane" id="left-pane">
       <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input type="text" id="rs-search-input" placeholder="Search RuleSets..." onkeypress="if(event.key==='Enter') searchRS()" style="flex:1" />
-        <button class="btn" style="padding:0 12px;display:flex;align-items:center;gap:6px" onclick="searchRS()">🔍 Search</button>
-        <button class="btn" style="padding:0 12px" onclick="clearRS()">↺ Refresh All</button>
+        <input type="text" id="rs-search-input" placeholder="{{ t('gui_browse_search_ph') }}" onkeypress="if(event.key==='Enter') searchRS()" style="flex:1" />
+        <button class="btn" style="padding:0 12px;display:flex;align-items:center;gap:6px" onclick="searchRS()">{{ t('gui_browse_search_btn') }}</button>
+        <button class="btn" style="padding:0 12px" onclick="clearRS()">{{ t('gui_browse_refresh') }}</button>
       </div>
       
-      <div class="pane-header"><span>RuleSets</span><span id="rs-count" style="color:var(--fg-dim)">0 items</span></div>
+      <div class="pane-header"><span>{{ t('gui_browse_rs') }}</span><span id="rs-count" style="color:var(--fg-dim)">0 items</span></div>
       <div class="table-wrap" style="flex:1">
         <table>
-          <thead><tr><th style="width:10%">⚡</th><th style="width:50%">NAME</th><th style="width:15%">ID</th><th style="width:15%">PROV</th><th style="width:10%">📅</th></tr></thead>
+          <thead><tr><th style="width:10%">⚡</th><th style="width:50%">{{ t('gui_browse_th_name') }}</th><th style="width:15%">ID</th><th style="width:15%">{{ t('gui_browse_th_prov') }}</th><th style="width:10%">📅</th></tr></thead>
           <tbody id="rs-table"></tbody>
         </table>
       </div>
@@ -596,10 +632,10 @@ tr.selected { background: #1c3a5e !important; }
     <div class="resizer" id="resizer"></div>
     
     <div class="right-pane">
-      <div class="pane-header"><span id="rules-title">Select a RuleSet...</span><button class="btn btn-accent" onclick="openScheduleModal()">+ Schedule Selected</button></div>
+      <div class="pane-header"><span id="rules-title">{{ t('gui_browse_rules_title') }}</span><button class="btn btn-accent" onclick="openScheduleModal()">{{ t('gui_browse_sch_btn') }}</button></div>
       <div class="table-wrap" style="flex:1">
         <table>
-          <thead><tr><th>⚡</th><th>ID</th><th>DESC</th><th>SRC</th><th>DEST</th><th>SERVICE</th><th>PROV</th><th>📅</th></tr></thead>
+          <thead><tr><th>⚡</th><th>ID</th><th>{{ t('gui_browse_th_desc') }}</th><th>{{ t('gui_browse_th_src') }}</th><th>{{ t('gui_browse_th_dest') }}</th><th>{{ t('gui_browse_th_svc') }}</th><th>PROV</th><th>📅</th></tr></thead>
           <tbody id="rules-table"><tr><td colspan="8" style="text-align:center;color:var(--fg-dim)">Empty</td></tr></tbody>
         </table>
       </div>
@@ -610,11 +646,11 @@ tr.selected { background: #1c3a5e !important; }
 <!-- ━━━ Schedules Tab ━━━ -->
 <div id="tab-schedules" class="tab-panel">
   <div class="toolbar">
-    <button class="btn" onclick="loadSchedules()">↻ Refresh</button>
-    <button class="btn btn-danger" onclick="deleteSelectedSchedules()">🗑 Delete Selected</button>
+    <button class="btn" onclick="loadSchedules()">{{ t('gui_sch_refresh') }}</button>
+    <button class="btn btn-danger" onclick="deleteSelectedSchedules()">{{ t('gui_sch_delete') }}</button>
   </div>
   <div class="table-wrap">
-    <table><thead><tr><th style="width:36px"><input type="checkbox" id="sch-select-all" onchange="toggleSchSelectAll(this)"></th><th style="width:50px">Type</th><th>RuleSet</th><th>Description</th><th style="width:70px">Action</th><th>Timing / Expires</th><th style="width:60px">ID</th></tr></thead>
+    <table><thead><tr><th style="width:36px"><input type="checkbox" id="sch-select-all" onchange="toggleSchSelectAll(this)"></th><th style="width:50px">{{ t('gui_sch_th_type') }}</th><th>{{ t('gui_sch_th_rs') }}</th><th>{{ t('gui_sch_th_desc') }}</th><th>{{ t('gui_browse_th_src') }}</th><th>{{ t('gui_browse_th_dest') }}</th><th>{{ t('gui_browse_th_svc') }}</th><th style="width:70px">{{ t('gui_sch_th_action') }}</th><th>{{ t('gui_sch_th_timing') }}</th><th style="width:60px">ID</th></tr></thead>
     <tbody id="sch-table"></tbody></table>
   </div>
 </div>
@@ -622,28 +658,35 @@ tr.selected { background: #1c3a5e !important; }
 <!-- ━━━ Logs Tab ━━━ -->
 <div id="tab-logs" class="tab-panel">
   <div class="toolbar">
-    <button class="btn btn-accent" onclick="runCheck()">▶ Run Manual Check</button>
-    <button class="btn" onclick="document.getElementById('log-panel').textContent=''">Clear</button>
+    <button class="btn btn-accent" onclick="runCheck()">{{ t('gui_logs_run') }}</button>
+    <button class="btn" onclick="document.getElementById('log-panel').textContent=''">{{ t('gui_logs_clear') }}</button>
   </div>
-  <div class="log-panel" id="log-panel">Ready. Click "Run Manual Check" to start.\n</div>
+  <div class="log-panel" id="log-panel">{{ t('gui_logs_ready') }}\n</div>
 </div>
 
 <!-- ━━━ Settings Tab ━━━ -->
 <div id="tab-settings" class="tab-panel">
   <div class="form-card">
-    <h3>⚙ PCE API Configuration <span style="font-size:12px;color:var(--fg-dim);float:right">v1.0.0</span></h3>
-    <div class="form-row"><label>PCE URL</label><input id="cfg-url" type="text" placeholder="https://pce.example.com:8443"></div>
-    <div class="form-row"><label>Org ID</label><input id="cfg-org" type="text" placeholder="1"></div>
-    <div class="form-row"><label>API Key</label><input id="cfg-key" type="text" placeholder="api_..."></div>
-    <div class="form-row"><label>API Secret</label><input id="cfg-sec" type="password" placeholder="••••••••"></div>
+    <h3>{{ t('gui_set_api_title') }} <span style="font-size:12px;color:var(--fg-dim);float:right">v1.0.0</span></h3>
+    <div class="form-row"><label>{{ t('gui_set_pce_url') }}</label><input id="cfg-url" type="text" placeholder="https://pce.example.com:8443"></div>
+    <div class="form-row"><label>{{ t('gui_set_org_id') }}</label><input id="cfg-org" type="text" placeholder="1"></div>
+    <div class="form-row"><label>{{ t('gui_set_api_key') }}</label><input id="cfg-key" type="text" placeholder="api_..."></div>
+    <div class="form-row"><label>{{ t('gui_set_api_sec') }}</label><input id="cfg-sec" type="password" placeholder="••••••••"></div>
     <div class="form-row">
-      <label>Language</label>
+      <label>{{ t('gui_set_lang') }}</label>
       <select id="cfg-lang" style="background:var(--bg-input);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:var(--radius);font-size:13px">
         <option value="en">English (en)</option>
         <option value="zh">繁體中文 (zh-TW)</option>
       </select>
     </div>
-    <div style="margin-top:16px"><button class="btn btn-accent" onclick="saveConfig()">💾 Save Configuration</button></div>
+    <div class="form-row">
+      <label>{{ t('gui_set_theme') }}</label>
+      <select id="cfg-theme" style="background:var(--bg-input);border:1px solid var(--border);color:var(--fg);padding:8px 12px;border-radius:var(--radius);font-size:13px" onchange="applyThemePreset(this.value)">
+        <option value="dark">{{ t('gui_set_theme_dark') }}</option>
+        <option value="light">{{ t('gui_set_theme_light') }}</option>
+      </select>
+    </div>
+    <div style="margin-top:16px"><button class="btn btn-accent" onclick="saveConfig()">{{ t('gui_set_save') }}</button></div>
   </div>
 </div>
 
@@ -655,25 +698,25 @@ tr.selected { background: #1c3a5e !important; }
 <!-- Schedule Modal (hidden) -->
 <div class="modal-overlay" id="schedule-modal" style="display:none">
 <div class="modal">
-  <h3 id="modal-title">📅 Schedule</h3>
+  <h3 id="modal-title">{{ t('gui_modal_sch_title') }}</h3>
   <div id="modal-target-info"></div>
   <div class="radio-group">
     <label><input type="radio" name="sch-type" value="recurring" checked onchange="toggleSchType()"> Recurring (Weekly)</label>
     <label><input type="radio" name="sch-type" value="one_time" onchange="toggleSchType()"> One-Time Expiration</label>
   </div>
   <div id="recurring-fields">
-    <div class="form-row"><label>Action</label><select id="sch-action" style="background:var(--bg-input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:var(--radius)"><option value="allow">Allow (enable in window)</option><option value="block">Block (disable in window)</option></select></div>
-    <div class="form-row"><label>Days</label><input id="sch-days" type="text" value="Monday,Tuesday,Wednesday,Thursday,Friday"></div>
-    <div class="form-row"><label>Start (HH:MM)</label><input id="sch-start" type="text" value="08:00"></div>
-    <div class="form-row"><label>End (HH:MM)</label><input id="sch-end" type="text" value="18:00"></div>
+    <div class="form-row"><label>{{ t('gui_modal_action') }}</label><select id="sch-action" style="background:var(--bg-input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:var(--radius)"><option value="allow">{{ t('gui_modal_act_allow') }}</option><option value="block">{{ t('gui_modal_act_block') }}</option></select></div>
+    <div class="form-row"><label>{{ t('gui_modal_days') }}</label><input id="sch-days" type="text" value="Monday,Tuesday,Wednesday,Thursday,Friday"></div>
+    <div class="form-row"><label>{{ t('gui_modal_start') }}</label><input id="sch-start" type="text" value="08:00"></div>
+    <div class="form-row"><label>{{ t('gui_modal_end') }}</label><input id="sch-end" type="text" value="18:00"></div>
   </div>
   <div id="onetime-fields" style="display:none">
-    <div class="form-row"><label>Expire At</label><input id="sch-expire" type="text" value=""></div>
-    <div style="font-size:11px;color:var(--fg-dim);margin-top:4px">Format: YYYY-MM-DD HH:MM  (auto-disable & remove)</div>
+    <div class="form-row"><label>{{ t('gui_modal_expire') }}</label><input id="sch-expire" type="text" value=""></div>
+    <div style="font-size:11px;color:var(--fg-dim);margin-top:4px">{{ t('gui_modal_expire_fmt') }}</div>
   </div>
   <div class="modal-actions">
-    <button class="btn" onclick="closeModal()">Cancel</button>
-    <button class="btn btn-accent" onclick="saveSchedule()">💾 Save Schedule</button>
+    <button class="btn" onclick="closeModal()">{{ t('gui_modal_cancel') }}</button>
+    <button class="btn btn-accent" onclick="saveSchedule()">{{ t('gui_modal_save') }}</button>
   </div>
 </div>
 </div>
@@ -742,7 +785,7 @@ function renderRS(data) {
   const list = data.items;
   const tb = document.getElementById('rs-table');
   tb.innerHTML = '';
-  document.getElementById('rs-count').textContent = data.total + ' items';
+  document.getElementById('rs-count').textContent = data.total + ' ' + `{{ t('gui_browse_items') }}`;
   list.forEach(rs => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td><span class="badge ${rs.enabled?'badge-on':'badge-off'}">${rs.enabled?'ON':'OFF'}</span></td>
@@ -827,13 +870,13 @@ function openScheduleModal() {
     toast('Cannot schedule a draft-only (unprovisioned) rule. Please provision it first.', 'error');
     return;
   }
-  const typeLabel = r.is_ruleset ? '📦 RuleSet' : '📄 Rule';
-  document.getElementById('modal-title').textContent = '📅 New Schedule';
+  const typeLabel = r.is_ruleset ? `{{ t('gui_modal_type_rs') }}` : `{{ t('gui_modal_type_rule') }}`;
+  document.getElementById('modal-title').textContent = `{{ t('gui_modal_sch_title') }}`;
   document.getElementById('modal-target-info').innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:13px">
-      <div style="margin-bottom:6px"><span style="color:var(--fg-dim)">Type:</span> <strong style="color:var(--accent)">${typeLabel}</strong></div>
-      <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">RuleSet:</span> ${r.detail_rs}</div>
-      <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">Target:</span> <strong>${r.name || 'ID ' + r.href.split('/').pop()}</strong></div>
+      <div style="margin-bottom:6px"><span style="color:var(--fg-dim)">{{ t('gui_modal_type') }}</span> <strong style="color:var(--accent)">${typeLabel}</strong></div>
+      <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">{{ t('gui_modal_rs') }}</span> ${r.detail_rs}</div>
+      <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">{{ t('gui_modal_target') }}</span> <strong>${r.name || 'ID ' + r.href.split('/').pop()}</strong></div>
       <div style="display:flex;gap:16px;margin-top:4px;color:var(--fg-dim);font-size:12px">
         <span>Src: ${r.src}</span><span>Dst: ${r.dst}</span><span>Svc: ${r.svc}</span>
       </div>
@@ -888,7 +931,12 @@ async function loadSchedules() {
     data.forEach(s => {
       const tr = document.createElement('tr');
       tr.innerHTML = `<td><input type="checkbox" class="sch-check" data-href="${s.href}"></td>
-        <td>${s.type}</td><td title="${s.rs_name}">${s.rs_name}</td><td title="${s.name}">${s.name}</td>
+        <td>${s.type}</td>
+        <td title="${s.rs_name}">${s.rs_name}</td>
+        <td title="${s.name}">${s.name}</td>
+        <td title="${s.src}">${s.src}</td>
+        <td title="${s.dst}">${s.dst}</td>
+        <td title="${s.svc}">${s.svc}</td>
         <td><span class="badge ${s.action==='ALLOW'?'badge-on':(s.action==='BLOCK'?'badge-off':'')}">${s.action}</span></td>
         <td>${s.timing}</td><td>${s.id}</td>
         <td><button class="btn" style="padding:2px 6px;font-size:11px" onclick="editSchedule('${s.href}')">✎ Edit</button></td>`;
@@ -908,13 +956,13 @@ async function editSchedule(href) {
       detail_rs: r.detail_rs, src: r.detail_src, dst: r.detail_dst, svc: r.detail_svc, prov: 'active'
     };
 
-    const typeLabel = r.is_ruleset ? '📦 RuleSet' : '📄 Rule';
-    document.getElementById('modal-title').textContent = '✎ Edit Schedule';
+    const typeLabel = r.is_ruleset ? `{{ t('gui_modal_type_rs') }}` : `{{ t('gui_modal_type_rule') }}`;
+    document.getElementById('modal-title').textContent = `{{ t('gui_modal_sch_edit_title') }}`;
     document.getElementById('modal-target-info').innerHTML = `
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:13px">
-        <div style="margin-bottom:6px"><span style="color:var(--fg-dim)">Type:</span> <strong style="color:var(--accent)">${typeLabel}</strong></div>
-        <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">RuleSet:</span> ${r.detail_rs || '-'}</div>
-        <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">Target:</span> <strong>${selectedRule.name}</strong></div>
+        <div style="margin-bottom:6px"><span style="color:var(--fg-dim)">{{ t('gui_modal_type') }}</span> <strong style="color:var(--accent)">${typeLabel}</strong></div>
+        <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">{{ t('gui_modal_rs') }}</span> ${r.detail_rs || '-'}</div>
+        <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">{{ t('gui_modal_target') }}</span> <strong>${selectedRule.name}</strong></div>
         <div style="display:flex;gap:16px;margin-top:4px;color:var(--fg-dim);font-size:12px">
           <span>Src: ${r.detail_src || 'All'}</span><span>Dst: ${r.detail_dst || 'All'}</span><span>Svc: ${r.detail_svc || 'All'}</span>
         </div>
@@ -991,7 +1039,7 @@ async function saveConfig() {
   try {
     const res = await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     const data = await res.json();
-    if (data.ok) toast(data.message);
+    if (data.ok) { toast(data.message); setTimeout(() => window.location.reload(), 800); }
     else toast(data.error, 'error');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
@@ -1016,7 +1064,7 @@ resizer.addEventListener('mousedown', (e) => {
 document.addEventListener('mousemove', (e) => {
   if (!isResizing) return;
   const newWidth = e.clientX - leftPane.getBoundingClientRect().left;
-  if (newWidth > 200 && newWidth < Math.max(600, window.innerWidth * 0.5)) {
+  if (newWidth > 200 && newWidth < Math.max(800, window.innerWidth * 0.8)) {
     leftPane.style.width = newWidth + 'px';
   }
 });
@@ -1029,7 +1077,24 @@ document.addEventListener('mouseup', () => {
 });
 
 // ━━━ Init ━━━
-document.addEventListener('DOMContentLoaded', () => { loadAllRS(); });
+// ━━━ Theme Logic ━━━
+function applyThemePreset(mode) {
+  if (mode === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  localStorage.setItem('illumio_theme', mode);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const savedTheme = localStorage.getItem('illumio_theme') || 'light';
+  applyThemePreset(savedTheme);
+  const themeSelect = document.getElementById('cfg-theme');
+  if (themeSelect) themeSelect.value = savedTheme;
+  loadAllRS(); 
+});
+
 </script>
 </body>
 </html>

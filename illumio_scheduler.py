@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import argparse
 
 # ==========================================
 # File Paths & Core Init
@@ -11,7 +12,8 @@ CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
 
 from src.core import ConfigManager, ScheduleDB, PCEClient, ScheduleEngine
 
-def init_core():
+def init_core() -> dict:
+    """Initialize core dependencies (Config, DB, PCE, Runtime Engine)"""
     cfg = ConfigManager(CONFIG_FILE)
     cfg.load()
     
@@ -23,26 +25,25 @@ def init_core():
     engine = ScheduleEngine(db, pce)
     return {'cfg': cfg, 'db': db, 'pce': pce, 'engine': engine}
 
-def get_port():
-    """Parse --port <N> from sys.argv, default 5000"""
-    for i, arg in enumerate(sys.argv):
-        if arg == '--port' and i + 1 < len(sys.argv):
-            try:
-                return int(sys.argv[i + 1])
-            except ValueError:
-                print(f"[!] Invalid port: {sys.argv[i + 1]}, using default 5000")
-    return 5000
-
 # ==========================================
 # Application Entry Point
 # ==========================================
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Illumio Rule Scheduler - Automate Illumio Core Policy Rules",
+        epilog="If no arguments are provided, the CLI interactive menu will launch."
+    )
+    parser.add_argument("--gui", action="store_true", help="Launch the Web GUI mode")
+    parser.add_argument("--port", type=int, default=5000, help="Port for the Web GUI (default: 5000)")
+    parser.add_argument("--monitor", action="store_true", help="Run in continuous background daemon mode")
+    
+    args = parser.parse_args()
+    
     core_system = init_core()
-    port = get_port()
 
-    if "--monitor" in sys.argv:
-        print(f"[*] Service Started (Daemon mode).")
-        interval = int(os.environ.get("ILLUMIO_CHECK_INTERVAL", 300))
+    if args.monitor:
+        print("[*] Service Started (Daemon mode).")
+        interval = int(os.environ.get("ILLUMIO_CHECK_INTERVAL", "300"))
         while True:
             try:
                 core_system['engine'].check(silent=True)
@@ -52,10 +53,10 @@ if __name__ == "__main__":
                 traceback.print_exc()
             time.sleep(interval)
 
-    elif "--gui" in sys.argv:
+    elif args.gui:
         try:
             from src.gui_ui import launch_gui
-            launch_gui(core_system, port=port)
+            launch_gui(core_system, port=args.port)
         except ImportError:
             print("[!] Web GUI requires Flask. Install with:")
             print("      pip install flask")
