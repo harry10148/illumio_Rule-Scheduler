@@ -271,11 +271,37 @@ class PCEClient:
         return res.json() if res and res.status_code == 200 else None
 
     def provision_changes(self, rs_href):
+        """Dependency-aware provisioning: discovers required dependencies first"""
+        org = self.cfg.config['org_id']
+        
+        # Step 1: Check what dependencies this ruleset needs
+        dep_payload = {"change_subset": {"rule_sets": [{"href": rs_href}]}}
+        dep_res = self._api_post(f"/orgs/{org}/sec_policy/draft/dependencies", dep_payload)
+        
+        # Step 2: Build complete change_subset including all dependencies
+        final_subset = {"rule_sets": [{"href": rs_href}]}
+        
+        if dep_res and dep_res.status_code == 200:
+            deps = dep_res.json()
+            # Merge any dependent objects into the change_subset
+            for obj_type in ['rule_sets', 'ip_lists', 'services', 'label_groups', 
+                             'virtual_services', 'firewall_settings', 'enforcement_boundaries',
+                             'virtual_servers', 'secure_connect_gateways']:
+                dep_items = deps.get(obj_type, [])
+                if dep_items:
+                    existing = final_subset.get(obj_type, [])
+                    existing_hrefs = {item['href'] for item in existing}
+                    for item in dep_items:
+                        if item.get('href') and item['href'] not in existing_hrefs:
+                            existing.append({"href": item['href']})
+                    final_subset[obj_type] = existing
+        
+        # Step 3: Provision with full dependency set
         payload = {
             "update_description": "Auto-Scheduler: Status/Note Update", 
-            "change_subset": {"rule_sets": [{"href": rs_href}]}
+            "change_subset": final_subset
         }
-        res = self._api_post(f"/orgs/{self.cfg.config['org_id']}/sec_policy", payload)
+        res = self._api_post(f"/orgs/{org}/sec_policy", payload)
         if res and res.status_code == 201:
             return True
         err = res.text if res else "Connection Error"

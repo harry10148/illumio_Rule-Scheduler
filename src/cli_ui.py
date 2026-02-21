@@ -2,6 +2,7 @@ import sys
 import getpass
 import time
 from src.core import Colors, truncate, extract_id
+from src.i18n import t, set_lang, get_lang
 
 def clean_input(text):
     if not text: return ""
@@ -22,13 +23,13 @@ def get_valid_time(prompt):
             datetime.datetime.strptime(raw, "%H:%M")
             return raw
         except ValueError: 
-            print(f"{Colors.RED}[-] 格式錯誤，請輸入 HH:MM{Colors.RESET}")
+            print(f"{Colors.RED}[-] {t('sch_time_error')}{Colors.RESET}")
 
-def paginate_and_select(items, format_func, title="搜尋結果", header_str=""):
+def paginate_and_select(items, format_func, title="", header_str=""):
     PAGE_SIZE = 50
     total = len(items)
     if total == 0:
-        print(f"{Colors.YELLOW}[-] 無資料。{Colors.RESET}")
+        print(f"{Colors.YELLOW}[-] {t('list_no_schedule')}{Colors.RESET}")
         return None
 
     page = 0
@@ -37,7 +38,7 @@ def paginate_and_select(items, format_func, title="搜尋結果", header_str="")
         end = start + PAGE_SIZE
         current_batch = items[start:end]
         
-        print(f"\n{Colors.HEADER}--- {title} (顯示 {start+1}-{min(end, total)} / 共 {total} 筆) ---{Colors.RESET}")
+        print(f"\n{Colors.HEADER}--- {title} ({start+1}-{min(end, total)} / {total}) ---{Colors.RESET}")
         if header_str:
             print(f"{Colors.BOLD}{header_str}{Colors.RESET}")
             print("-" * 120)
@@ -49,11 +50,11 @@ def paginate_and_select(items, format_func, title="搜尋結果", header_str="")
             print(format_func(real_idx, item))
         print("-" * 120 if header_str else "-" * 80)
 
-        prompt = "請選擇序號"
+        prompt = t('select_prompt')
         opts = []
-        if end < total: opts.append("(n)下一頁")
-        if page > 0: opts.append("(p)上一頁")
-        opts.append("(q)返回")
+        if end < total: opts.append(f"(n){t('next_page')}")
+        if page > 0: opts.append(f"(p){t('prev_page')}")
+        opts.append(f"(q){t('back')}")
         
         ans = clean_input(input(f"{prompt} [{' '.join(opts)}]: ")).lower()
 
@@ -63,8 +64,8 @@ def paginate_and_select(items, format_func, title="搜尋結果", header_str="")
         elif ans.isdigit():
             idx = int(ans) - 1
             if 0 <= idx < total: return items[idx]
-            else: print(f"{Colors.RED}[-] 序號無效。{Colors.RESET}")
-        else: print(f"{Colors.RED}[-] 輸入無效。{Colors.RESET}")
+            else: print(f"{Colors.RED}[-] {t('invalid_number')}{Colors.RESET}")
+        else: print(f"{Colors.RED}[-] {t('invalid_input')}{Colors.RESET}")
 
 class CLI:
     def __init__(self, core_system):
@@ -75,34 +76,47 @@ class CLI:
 
     def check_config_ready(self):
         if not self.cfg.is_ready():
-            print(f"{Colors.RED}[!] 尚未設定 API，請先執行設定。{Colors.RESET}")
+            print(f"{Colors.RED}[!] {t('config_not_ready')}{Colors.RESET}")
             return False
         return True
 
     def setup_config_ui(self):
-        print(f"\n{Colors.HEADER}--- API 設定 (輸入 q 取消) ---{Colors.RESET}")
+        print(f"\n{Colors.HEADER}--- {t('config_title')} ---{Colors.RESET}")
         curr_url = self.cfg.config.get('pce_url','')
-        u_in = clean_input(input(f"PCE URL (目前: {curr_url}): "))
+        u_in = clean_input(input(f"PCE URL ({t('sch_current')}: {curr_url}): "))
         if u_in.lower() in ['q', 'b']: return
         url = u_in or curr_url
 
         curr_org = self.cfg.config.get('org_id','')
-        o_in = clean_input(input(f"Org ID  (目前: {curr_org}): "))
+        o_in = clean_input(input(f"Org ID  ({t('sch_current')}: {curr_org}): "))
         if o_in.lower() in ['q', 'b']: return
         org = o_in or curr_org
 
         curr_key = self.cfg.config.get('api_key','')
-        k_in = clean_input(input(f"API Key (目前: {curr_key}): "))
+        k_in = clean_input(input(f"API Key ({t('sch_current')}: {curr_key}): "))
         if k_in.lower() in ['q', 'b']: return
         key = k_in or curr_key
 
-        sec_p = "API Secret (未變更)" if self.cfg.config.get('api_secret') else "API Secret"
+        sec_p = "API Secret (unchanged)" if self.cfg.config.get('api_secret') else "API Secret"
         sec = getpass.getpass(f"{sec_p}: ")
         secret = sec if sec else self.cfg.config.get('api_secret')
         
         if url and org and key and secret: 
             if self.cfg.save(url, org, key, secret):
-                print(f"{Colors.GREEN}[+] 設定已儲存。{Colors.RESET}")
+                print(f"{Colors.GREEN}[+] {t('config_saved')}{Colors.RESET}")
+
+    # ==========================================
+    # Language Selector
+    # ==========================================
+    def select_language(self):
+        print(f"\n{Colors.HEADER}--- {t('lang_prompt')} ---{Colors.RESET}")
+        print(f"  1. {t('lang_en')}")
+        print(f"  2. {t('lang_zh')}")
+        ans = clean_input(input(">> "))
+        if ans == '1': set_lang('en')
+        elif ans == '2': set_lang('zh')
+        else: return
+        print(f"{Colors.GREEN}[+] {t('lang_set')} {t('lang_en') if get_lang() == 'en' else t('lang_zh')}{Colors.RESET}")
 
     # ==========================================
     # Formatters
@@ -129,7 +143,6 @@ class CLI:
         note = truncate(raw_desc, 30)
         status = Colors.status(r.get('enabled'))
         
-        # A1 Fix: Map to destinations (fallback to consumers for older PCEs)
         dest_field = r.get('destinations', r.get('consumers', []))
         src = truncate(self.pce.resolve_actor_str(dest_field), 15)
         dst = truncate(self.pce.resolve_actor_str(r.get('providers', [])), 15)
@@ -141,18 +154,17 @@ class CLI:
         return f"{idx:<4} | {mark} | {rid:<18} | {status:<15} | {note:<30} | {src:<15} | {dst:<15} | {svc}"
 
     # ==========================================
-    # Unified Schedule Management (Options 1+2+3 + Edit)
+    # Unified Schedule Management
     # ==========================================
     def schedule_management_ui(self):
-        """Consolidated schedule management: Browse/Add, List, Edit, Delete"""
         while True:
-            print(f"\n{Colors.HEADER}=== 排程管理 ==={Colors.RESET}")
-            print(f"  提示: {Colors.YELLOW}★{Colors.RESET}=規則集排程, {Colors.CYAN}●{Colors.RESET}=僅子規則排程")
-            print(f"  1. 瀏覽與{Colors.GREEN}新增{Colors.RESET}排程")
-            print(f"  2. 列表已排程項目 (Grouped View)")
-            print(f"  3. {Colors.CYAN}修改{Colors.RESET}排程")
-            print(f"  4. {Colors.RED}刪除{Colors.RESET}排程")
-            print(f"  q. 返回主選單")
+            print(f"\n{Colors.HEADER}=== {t('sch_mgmt_title')} ==={Colors.RESET}")
+            print(f"  {t('sch_hint')}: {Colors.YELLOW}★{Colors.RESET}={t('sch_hint_rs')}, {Colors.CYAN}●{Colors.RESET}={t('sch_hint_child')}")
+            print(f"  1. {Colors.GREEN}{t('sch_browse')}{Colors.RESET}")
+            print(f"  2. {t('sch_list')}")
+            print(f"  3. {Colors.CYAN}{t('sch_edit')}{Colors.RESET}")
+            print(f"  4. {Colors.RED}{t('sch_delete')}{Colors.RESET}")
+            print(f"  q. {t('sch_back')}")
             
             ans = clean_input(input(">> "))
             if ans.lower() in ['q', 'b', '']: return
@@ -169,41 +181,41 @@ class CLI:
 
     # ── 1. Browse & Add ──
     def _browse_and_add(self):
-        print(f"\n{Colors.HEADER}--- 瀏覽與新增排程 (輸入 q 返回) ---{Colors.RESET}")
+        print(f"\n{Colors.HEADER}--- {t('browse_title')} ---{Colors.RESET}")
         
-        raw = clean_input(input("請輸入 ID 或 關鍵字 (直接按 Enter 瀏覽全部): "))
+        raw = clean_input(input(f"{t('browse_prompt')} "))
         if raw.lower() in ['q', 'b']: return
         
         selected_rs = None
         matches = []
 
         if not raw:
-            print(f"{Colors.BLUE}[*] 讀取全部清單...{Colors.RESET}")
+            print(f"{Colors.BLUE}[*] {t('browse_loading')}{Colors.RESET}")
             matches = self.pce.get_all_rulesets()
         elif raw.isdigit():
-            print(f"{Colors.BLUE}[*] 定位 ID: {raw} ...{Colors.RESET}")
+            print(f"{Colors.BLUE}[*] {t('browse_locate')} {raw} ...{Colors.RESET}")
             rs = self.pce.get_ruleset_by_id(raw)
             if rs: selected_rs = rs
             else:
-                print(f"{Colors.YELLOW}[-] 找不到 ID，轉為搜尋名稱...{Colors.RESET}")
+                print(f"{Colors.YELLOW}[-] {t('browse_not_found')}{Colors.RESET}")
                 matches = self.pce.search_rulesets(raw)
         else:
             matches = self.pce.search_rulesets(raw)
 
         if not selected_rs:
-            if not matches: return print(f"{Colors.RED}[-] 找不到結果。{Colors.RESET}")
-            header = f"{'No':<4} | {'Sch':<1} | {'ID':<8} | {'Status':<6} | {'Rules':<9} | {'Name'}"
-            selected_rs = paginate_and_select(matches, self.format_ruleset_row, title="規則集清單", header_str=header)
+            if not matches: return print(f"{Colors.RED}[-] {t('browse_no_result')}{Colors.RESET}")
+            header = f"{t('hdr_no'):<4} | {t('hdr_sch'):<1} | {t('hdr_id'):<8} | {t('hdr_status'):<6} | {t('hdr_rules'):<9} | {t('hdr_name')}"
+            selected_rs = paginate_and_select(matches, self.format_ruleset_row, title="RuleSets", header_str=header)
             if not selected_rs: return
 
         rs_href = selected_rs['href']
         rs_name = selected_rs['name']
         
-        print(f"\n{Colors.GREEN}[+] 已選擇: {rs_name} (ID: {extract_id(rs_href)}){Colors.RESET}")
-        print("1. 排程控制「整個規則集」")
-        print("2. 瀏覽並選擇「單條規則」")
+        print(f"\n{Colors.GREEN}[+] {t('browse_selected')} {rs_name} (ID: {extract_id(rs_href)}){Colors.RESET}")
+        print(f"1. {t('browse_opt_rs')}")
+        print(f"2. {t('browse_opt_rule')}")
         
-        sub_act = clean_input(input("動作 (q=返回) > "))
+        sub_act = clean_input(input(f"{t('browse_action')} "))
         if sub_act.lower() in ['q', 'b']: return
 
         target_href, target_name, is_rs = "", "", False
@@ -215,15 +227,14 @@ class CLI:
         elif sub_act == '2':
             full_rs = self.pce.get_ruleset_by_id(extract_id(rs_href))
             rules = full_rs.get('rules', [])
-            if not rules: return print(f"{Colors.RED}[-] 此規則集內無規則。{Colors.RESET}")
+            if not rules: return print(f"{Colors.RED}[-] {t('browse_no_rules')}{Colors.RESET}")
 
-            header = f"{'No':<4} | {'Sch':<1} | {'ID':<6} | {'Status':<6} | {'Note (Desc)':<30} | {'Source':<15} | {'Dest':<15} | {'Service'}"
-            r = paginate_and_select(rules, self.format_rule_row, title=f"規則清單 ({rs_name})", header_str=header)
+            header = f"{t('hdr_no'):<4} | {t('hdr_sch'):<1} | {t('hdr_id'):<6} | {t('hdr_status'):<6} | {t('hdr_note'):<30} | {t('hdr_source'):<15} | {t('hdr_dest'):<15} | {t('hdr_service')}"
+            r = paginate_and_select(rules, self.format_rule_row, title=f"Rules ({rs_name})", header_str=header)
             if not r: return
 
             target_href, target_name, is_rs = r['href'], r.get('description') or f"Rule {extract_id(r['href'])}", False
             
-            # A1 Fix: Map to destinations
             dest_field = r.get('destinations', r.get('consumers', []))
             meta_src = self.pce.resolve_actor_str(dest_field)
             meta_dst = self.pce.resolve_actor_str(r.get('providers', []))
@@ -231,84 +242,82 @@ class CLI:
         else: return
 
         if target_href in self.db.get_all():
-            print(f"{Colors.YELLOW}[!] 警告: 此規則已存在排程設定。將覆蓋舊設定。{Colors.RESET}")
-            if clean_input(input("確認? (y/n): ")).lower() != 'y': return
+            print(f"{Colors.YELLOW}[!] {t('sch_exists_warn')}{Colors.RESET}")
+            if clean_input(input(f"{t('sch_confirm')} ")).lower() != 'y': return
 
         db_entry, note_msg = self._collect_schedule_params(target_name, is_rs, meta_rs, meta_src, meta_dst, meta_svc)
         if not db_entry: return
 
         self.db.put(target_href, db_entry)
         self.pce.update_rule_note(target_href, note_msg)
-        print(f"\n{Colors.GREEN}[+] 排程已儲存並寫入 Note! (ID: {extract_id(target_href)}){Colors.RESET}")
+        print(f"\n{Colors.GREEN}[+] {t('sch_saved')} (ID: {extract_id(target_href)}){Colors.RESET}")
 
     # ── Shared: Collect Schedule Parameters ──
     def _collect_schedule_params(self, target_name, is_rs, meta_rs, meta_src, meta_dst, meta_svc, existing=None):
-        """Returns (db_entry, note_msg) or (None, None) if cancelled"""
-        print(f"\n[目標] {Colors.BOLD}{target_name}{Colors.RESET}")
-        print(f"1. {Colors.GREEN}Schedule{Colors.RESET} (週期性排程)")
-        print(f"2. {Colors.RED}Expiration{Colors.RESET} (時間到自動關閉並刪除排程)")
+        print(f"\n[{t('sch_target')}] {Colors.BOLD}{target_name}{Colors.RESET}")
+        print(f"1. {Colors.GREEN}{t('sch_type_recurring')}{Colors.RESET}")
+        print(f"2. {Colors.RED}{t('sch_type_expire')}{Colors.RESET}")
         
-        # Pre-select mode from existing config if editing
         default_mode = ""
         if existing:
             default_mode = "1" if existing.get('type') == 'recurring' else "2"
-            print(f"{Colors.GREY}(目前: {'週期性排程' if default_mode == '1' else '到期自動關閉'}){Colors.RESET}")
+            curr_type = t('sch_type_recurring') if default_mode == '1' else t('sch_type_expire')
+            print(f"{Colors.GREY}({t('sch_current')}: {curr_type}){Colors.RESET}")
         
-        mode_sel = clean_input(input(f"選單 (q=返回) > "))
+        mode_sel = clean_input(input(f"{t('select_prompt')} (q={t('back')}) > "))
         if mode_sel.lower() in ['q', 'b']: return None, None
         if not mode_sel and default_mode: mode_sel = default_mode
 
         if mode_sel == '1':
-            print(f"\n[行為] 1.{Colors.GREEN}啟動{Colors.RESET} (時間內開啟) / 2.{Colors.RED}關閉{Colors.RESET} (時間內關閉)")
+            print(f"\n[{t('sch_action_label')}] 1.{Colors.GREEN}{t('sch_action_enable')}{Colors.RESET} / 2.{Colors.RED}{t('sch_action_disable')}{Colors.RESET}")
             default_act = ""
             if existing and existing.get('type') == 'recurring':
                 default_act = "2" if existing.get('action') == 'block' else "1"
-                print(f"{Colors.GREY}(目前: {'關閉' if default_act == '2' else '啟動'}){Colors.RESET}")
+                print(f"{Colors.GREY}({t('sch_current')}: {'2' if default_act == '2' else '1'}){Colors.RESET}")
             
             act_in = clean_input(input(">> "))
             if act_in.lower() in ['q', 'b']: return None, None
             if not act_in and default_act: act_in = default_act
             act = 'block' if act_in == '2' else 'allow'
-            act_str = "啟動" if act == 'allow' else "關閉"
 
             default_days = ""
             if existing and existing.get('type') == 'recurring':
                 default_days = ",".join(existing.get('days', []))
-            print(f"[時間] 星期 (Mon,Tue...) [Enter=每天]:")
+            print(f"[{t('sch_days_prompt')}]")
             if default_days:
-                print(f"{Colors.GREY}(目前: {default_days}){Colors.RESET}")
+                print(f"{Colors.GREY}({t('sch_current')}: {default_days}){Colors.RESET}")
             raw_days = clean_input(input(">> "))
             if raw_days.lower() in ['q', 'b']: return None, None
             if not raw_days and default_days: raw_days = default_days
             days = [d.strip() for d in raw_days.split(',')] if raw_days else ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-            days_str = "每天" if not raw_days else raw_days
+            days_str = t('action_everyday') if not raw_days else raw_days
             
             default_start = existing.get('start', '') if existing and existing.get('type') == 'recurring' else ''
             default_end = existing.get('end', '') if existing and existing.get('type') == 'recurring' else ''
             
-            prompt_s = f"開始 (HH:MM) [q=返回]"
-            if default_start: prompt_s += f" ({Colors.GREY}目前: {default_start}{Colors.RESET})"
-            prompt_s += ": "
+            prompt_s = t('sch_start_prompt')
+            if default_start: prompt_s += f" ({t('sch_current')}: {default_start})"
+            prompt_s += " "
             s_time = clean_input(input(prompt_s))
             if s_time.lower() in ['q', 'b']: return None, None
             if not s_time and default_start: s_time = default_start
             
-            prompt_e = f"結束 (HH:MM) [q=返回]"
-            if default_end: prompt_e += f" ({Colors.GREY}目前: {default_end}{Colors.RESET})"
-            prompt_e += ": "            
+            prompt_e = t('sch_end_prompt')
+            if default_end: prompt_e += f" ({t('sch_current')}: {default_end})"
+            prompt_e += " "
             e_time = clean_input(input(prompt_e))
             if e_time.lower() in ['q', 'b']: return None, None
             if not e_time and default_end: e_time = default_end
 
-            # Validate time format
             import datetime
             try:
                 datetime.datetime.strptime(s_time, "%H:%M")
                 datetime.datetime.strptime(e_time, "%H:%M")
             except ValueError:
-                print(f"{Colors.RED}[-] 時間格式錯誤。{Colors.RESET}")
+                print(f"{Colors.RED}[-] {t('sch_time_error')}{Colors.RESET}")
                 return None, None
 
+            act_str = t('action_enable_in_window') if act == 'allow' else t('action_disable_in_window')
             db_entry = {
                 "type": "recurring", "name": target_name, "is_ruleset": is_rs, 
                 "action": act, "days": days, "start": s_time, "end": e_time,
@@ -324,9 +333,9 @@ class CLI:
             if existing and existing.get('type') == 'one_time':
                 default_expire = existing.get('expire_at', '').replace('T', ' ')
             
-            prompt_ex = "過期時間 (YYYY-MM-DD HH:MM) [q=返回]"
-            if default_expire: prompt_ex += f" ({Colors.GREY}目前: {default_expire}{Colors.RESET})"
-            prompt_ex += ": "
+            prompt_ex = t('sch_expire_prompt')
+            if default_expire: prompt_ex += f" ({t('sch_current')}: {default_expire})"
+            prompt_ex += " "
             raw_ex = clean_input(input(prompt_ex))
             if raw_ex.lower() in ['q', 'b']: return None, None
             if not raw_ex and default_expire: raw_ex = default_expire
@@ -335,7 +344,7 @@ class CLI:
                 ex_fmt = raw_ex.replace(" ", "T")
                 datetime.datetime.fromisoformat(ex_fmt)
             except ValueError:
-                print(f"{Colors.RED}[-] 時間格式錯誤。{Colors.RESET}")
+                print(f"{Colors.RED}[-] {t('sch_time_error')}{Colors.RESET}")
                 return None, None
 
             db_entry = {
@@ -349,11 +358,11 @@ class CLI:
         
         return None, None
 
-    # ── 2. List Grouped (with ★/● and fixed [已刪除] detection) ──
+    # ── 2. List Grouped ──
     def _list_grouped(self):
         db_data = self.db.get_all()
         if not db_data: 
-            return print(f"\n{Colors.YELLOW}[-] 目前沒有設定排程。{Colors.RESET}")
+            return print(f"\n{Colors.YELLOW}[-] {t('list_no_schedule')}{Colors.RESET}")
         
         groups = {}
         for href, conf in db_data.items():
@@ -367,7 +376,7 @@ class CLI:
             else: groups[rs_name]['rules'].append(entry_data)
                 
         print("\n" + "="*120)
-        print(f"{'Sch':<3} | {'ID':<10} | {'Type':<6} | {'Hierarchy & Note (Desc)':<50} | {'Mode/Action':<15} | {'Time/Expiration'}")
+        print(f"{t('hdr_sch'):<3} | {t('hdr_id'):<10} | {t('list_type'):<6} | {t('list_hierarchy'):<50} | {t('list_mode'):<15} | {t('list_timing')}")
         print("-" * 120)
 
         for rs_name in sorted(groups.keys()):
@@ -384,14 +393,13 @@ class CLI:
                     live_name = live_res.json().get('name', c['name'])
                     display_name = truncate(f"[RS] {live_name}", 50)
                 elif live_res is None:
-                    # API connectivity issue — don't mark as deleted
-                    display_name = truncate(f"[RS] {c.get('name', rs_name)} {Colors.YELLOW}(連線失敗){Colors.RESET}", 50)
+                    display_name = truncate(f"[RS] {c.get('name', rs_name)} {Colors.YELLOW}{t('list_conn_fail')}{Colors.RESET}", 50)
                 else:
-                    display_name = f"{Colors.RED}[已刪除] (規則已從 PCE 移除){Colors.RESET}"
+                    display_name = f"{Colors.RED}{t('list_deleted')}{Colors.RESET}"
 
                 if c['type'] == 'recurring':
                     mode = Colors.action(act)
-                    d_str = "Everyday" if len(c['days'])==7 else ",".join([d[:3] for d in c['days']])
+                    d_str = t('action_everyday') if len(c['days'])==7 else ",".join([d[:3] for d in c['days']])
                     time_str = f"{d_str} {c['start']}-{c['end']}"
                 else:
                     mode = f"{Colors.RED}EXPIRE{Colors.RESET}"
@@ -413,13 +421,13 @@ class CLI:
                     live_desc = live_res.json().get('description') or f"Rule {extract_id(h)}"
                     display_name = tree_prefix + truncate(live_desc, 45)
                 elif live_res is None:
-                    display_name = tree_prefix + f"{c.get('name', 'Rule')} {Colors.YELLOW}(連線失敗){Colors.RESET}"
+                    display_name = tree_prefix + f"{c.get('name', 'Rule')} {Colors.YELLOW}{t('list_conn_fail')}{Colors.RESET}"
                 else:
-                    display_name = tree_prefix + f"{Colors.RED}[已刪除] (規則失效){Colors.RESET}"
+                    display_name = tree_prefix + f"{Colors.RED}{t('list_rule_deleted')}{Colors.RESET}"
 
                 if c['type'] == 'recurring':
                     mode = Colors.action(act)
-                    d_str = "Everyday" if len(c['days'])==7 else ",".join([d[:3] for d in c['days']])
+                    d_str = t('action_everyday') if len(c['days'])==7 else ",".join([d[:3] for d in c['days']])
                     time_str = f"{d_str} {c['start']}-{c['end']}"
                 else:
                     mode = f"{Colors.RED}EXPIRE{Colors.RESET}"
@@ -435,18 +443,18 @@ class CLI:
         db_data = self.db.get_all()
         if not db_data: return
         
-        k = clean_input(input(f"\n輸入要{Colors.CYAN}修改{Colors.RESET}的 ID (q=返回): "))
+        k = clean_input(input(f"\n{t('edit_prompt')} "))
         if k.lower() in ['q', 'b', '']: return
         
         found = [x for x in db_data if extract_id(x) == k]
         if not found:
-            return print(f"{Colors.RED}[-] 找不到該 ID 的排程。{Colors.RESET}")
+            return print(f"{Colors.RED}[-] {t('edit_not_found')}{Colors.RESET}")
         
         href = found[0]
         existing = db_data[href]
         
-        print(f"\n{Colors.CYAN}[*] 修改排程: {existing.get('detail_name', existing['name'])} (ID: {k}){Colors.RESET}")
-        print(f"{Colors.GREY}直接按 Enter 保留現有值{Colors.RESET}")
+        print(f"\n{Colors.CYAN}[*] {t('edit_editing')} {existing.get('detail_name', existing['name'])} (ID: {k}){Colors.RESET}")
+        print(f"{Colors.GREY}{t('sch_keep_enter')}{Colors.RESET}")
         
         target_name = existing.get('detail_name', existing.get('name', ''))
         is_rs = existing.get('is_ruleset', False)
@@ -460,7 +468,7 @@ class CLI:
         
         self.db.put(href, db_entry)
         self.pce.update_rule_note(href, note_msg)
-        print(f"\n{Colors.GREEN}[+] 排程已更新! (ID: {extract_id(href)}){Colors.RESET}")
+        print(f"\n{Colors.GREEN}[+] {t('sch_updated')} (ID: {extract_id(href)}){Colors.RESET}")
 
     # ── 4. Delete Schedule ──
     def _delete_schedule(self):
@@ -468,7 +476,7 @@ class CLI:
         db_data = self.db.get_all()
         if not db_data: return
         
-        k = clean_input(input(f"\n輸入要{Colors.RED}刪除{Colors.RESET}的 ID (q=返回): "))
+        k = clean_input(input(f"\n{t('delete_prompt')} "))
         if k.lower() in ['q', 'b', '']: return
         
         found = [x for x in db_data if extract_id(x) == k]
@@ -476,18 +484,18 @@ class CLI:
         if found:
             href = found[0]
             conf = db_data[href]
-            print(f"  目標: {conf.get('detail_name', conf['name'])} (ID: {k})")
-            if clean_input(input(f"  確定刪除? (y/n): ")).lower() != 'y': return
+            print(f"  {t('delete_target')} {conf.get('detail_name', conf['name'])} (ID: {k})")
+            if clean_input(input(f"  {t('delete_confirm')} ")).lower() != 'y': return
             
-            print("[*] 嘗試清除 Note 標記...")
+            print(f"[*] {t('delete_cleaning')}")
             try:
                 self.pce.update_rule_note(href, "", remove=True)
             except Exception: pass
             
             self.db.delete(href)
-            print(f"{Colors.GREEN}[OK] 排程已刪除。{Colors.RESET}")
+            print(f"{Colors.GREEN}[OK] {t('delete_done')}{Colors.RESET}")
         else:
-            print(f"{Colors.RED}[-] 找不到該 ID。{Colors.RESET}")
+            print(f"{Colors.RED}[-] {t('delete_not_found')}{Colors.RESET}")
 
     # ==========================================
     # Main Menu
@@ -499,12 +507,13 @@ class CLI:
         self.pce.update_label_cache()
         
         while True:
-            print(f"\n{Colors.HEADER}=== Illumio Scheduler v4.2 (Hybrid UI) ==={Colors.RESET}")
-            print("0. 設定 API")
-            print("1. 排程管理 (瀏覽/列表/修改/刪除)")
-            print("2. 立即檢查")
-            print(f"3. {Colors.CYAN}開啟 Web GUI{Colors.RESET}")
-            print("q. 離開")
+            print(f"\n{Colors.HEADER}=== {t('app_title')} ==={Colors.RESET}")
+            print(f"0. {t('menu_config')}")
+            print(f"1. {t('menu_schedule')}")
+            print(f"2. {t('menu_check')}")
+            print(f"3. {Colors.CYAN}{t('menu_webgui')}{Colors.RESET}")
+            print(f"4. {t('menu_lang')} [{get_lang().upper()}]")
+            print(f"q. {t('menu_quit')}")
             ans = clean_input(input(">> "))
             
             try:
@@ -513,15 +522,16 @@ class CLI:
                 elif ans == '2': self.engine.check(silent=False)
                 elif ans == '3':
                     if core_system:
-                        print(f"{Colors.BLUE}[*] 啟動 Web GUI...{Colors.RESET}")
+                        print(f"{Colors.BLUE}[*] {t('gui_starting')}{Colors.RESET}")
                         try:
                             from src.gui_ui import launch_gui
                             launch_gui(core_system)
                         except ImportError:
-                            print(f"{Colors.RED}[!] Web GUI 需要 Flask。請先安裝：{Colors.RESET}")
+                            print(f"{Colors.RED}[!] {t('gui_flask_missing')}{Colors.RESET}")
                             print(f"      pip install flask")
                     else:
-                        print(f"{Colors.RED}[-] 無法啟動 GUI（core_system 未傳入）{Colors.RESET}")
+                        print(f"{Colors.RED}[-] {t('gui_no_core')}{Colors.RESET}")
+                elif ans == '4': self.select_language()
                 elif ans.lower() in ['q', 'exit']: break
             except Exception as e:
                 import traceback
