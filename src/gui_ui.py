@@ -201,12 +201,13 @@ def create_app(core_system):
 # Entry Point
 # ==========================================
 def launch_gui(core_system, port=5000):
-    host = '127.0.0.1'
+    host = '0.0.0.0'
     app = create_app(core_system)
     url = f'http://{host}:{port}'
+    browser_url = f'http://localhost:{port}'
     print(f"[WebGUI] Starting at {url}")
     print(f"[WebGUI] Press Ctrl+C to stop")
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    threading.Timer(1.0, lambda: webbrowser.open(browser_url)).start()
     app.run(host=host, port=port, debug=False, use_reloader=False)
 
 
@@ -485,7 +486,7 @@ tr.selected { background: #1c3a5e !important; }
 <div class="header">
   <h1>🕒 Illumio Rule Scheduler</h1>
   <span class="version">v4.2 · Web GUI</span>
-  <button class="stop-btn" onclick="stopServer()">⏹ Stop Server</button>
+  <button class="stop-btn" onclick="stopServer()">⏹ Stop WebGUI</button>
 </div>
 
 <!-- Tabs -->
