@@ -571,6 +571,7 @@ tr.selected { background: #1c3a5e !important; }
 <div class="modal-overlay" id="schedule-modal" style="display:none">
 <div class="modal">
   <h3 id="modal-title">📅 Schedule</h3>
+  <div id="modal-target-info"></div>
   <div class="radio-group">
     <label><input type="radio" name="sch-type" value="recurring" checked onchange="toggleSchType()"> Recurring (Weekly)</label>
     <label><input type="radio" name="sch-type" value="one_time" onchange="toggleSchType()"> One-Time Expiration</label>
@@ -652,6 +653,7 @@ function renderRS(list) {
 }
 async function selectRS(rs, tr) {
   selectedRS = rs;
+  selectedRule = null;  // Reset rule selection when switching RS
   document.querySelectorAll('#rs-table tr').forEach(r => r.classList.remove('selected'));
   tr.classList.add('selected');
   try {
@@ -664,7 +666,7 @@ async function selectRS(rs, tr) {
 function renderRules(rules, rsName) {
   const tb = document.getElementById('rules-table');
   tb.innerHTML = '';
-  rules.forEach(r => {
+  rules.forEach((r, idx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td><span class="badge ${r.enabled?'badge-on':'badge-off'}">${r.enabled?'ON':'OFF'}</span></td>
       <td>${r.id}</td>
@@ -679,13 +681,29 @@ function renderRules(rules, rsName) {
       selectedRule = { href: r.href, name: r.desc, is_ruleset: r.is_ruleset, detail_rs: rsName, src: r.src, dst: r.dst, svc: r.svc };
     };
     tb.appendChild(tr);
+    // Auto-select first row (ENTIRE RULESET)
+    if (idx === 0) {
+      tr.classList.add('selected');
+      selectedRule = { href: r.href, name: r.desc, is_ruleset: r.is_ruleset, detail_rs: rsName, src: r.src, dst: r.dst, svc: r.svc };
+    }
   });
 }
 
 // ━━━ Schedule Modal ━━━
 function openScheduleModal() {
-  if (!selectedRS || !selectedRule) { toast('Select a RuleSet and a rule first.', 'error'); return; }
-  document.getElementById('modal-title').textContent = '📅 Schedule: ' + (selectedRule.name || 'Unknown');
+  if (!selectedRS || !selectedRule) { toast('Please select a RuleSet on the left and a rule on the right first.', 'error'); return; }
+  const r = selectedRule;
+  const typeLabel = r.is_ruleset ? '📦 RuleSet' : '📄 Rule';
+  document.getElementById('modal-title').textContent = '📅 New Schedule';
+  document.getElementById('modal-target-info').innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:13px">
+      <div style="margin-bottom:6px"><span style="color:var(--fg-dim)">Type:</span> <strong style="color:var(--accent)">${typeLabel}</strong></div>
+      <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">RuleSet:</span> ${r.detail_rs}</div>
+      <div style="margin-bottom:4px"><span style="color:var(--fg-dim)">Target:</span> <strong>${r.name || 'ID ' + r.href.split('/').pop()}</strong></div>
+      <div style="display:flex;gap:16px;margin-top:4px;color:var(--fg-dim);font-size:12px">
+        <span>Src: ${r.src}</span><span>Dst: ${r.dst}</span><span>Svc: ${r.svc}</span>
+      </div>
+    </div>`;
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   document.getElementById('sch-expire').value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} 23:59`;
