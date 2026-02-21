@@ -147,14 +147,21 @@ def create_app(core_system):
         pce.update_rule_note(href, note_msg)
         return jsonify({'ok': True, 'message': 'Schedule saved and provisioned.'})
 
-    @app.route('/api/schedules/<path:href>', methods=['DELETE'])
-    def api_schedule_delete(href):
-        try:
-            pce.update_rule_note(href, '', remove=True)
-        except Exception:
-            pass
-        db.delete(href)
-        return jsonify({'ok': True})
+    @app.route('/api/schedules/delete', methods=['POST'])
+    def api_schedule_delete():
+        d = request.get_json()
+        hrefs = d.get('hrefs', [])
+        if not hrefs:
+            return jsonify({'error': 'No hrefs provided'}), 400
+        count = 0
+        for href in hrefs:
+            try:
+                pce.update_rule_note(href, '', remove=True)
+            except Exception:
+                pass
+            db.delete(href)
+            count += 1
+        return jsonify({'ok': True, 'count': count})
 
     # ── Check ──
     @app.route('/api/check', methods=['POST'])
@@ -537,10 +544,10 @@ tr.selected { background: #1c3a5e !important; }
 <div id="tab-schedules" class="tab-panel">
   <div class="toolbar">
     <button class="btn" onclick="loadSchedules()">↻ Refresh</button>
-    <button class="btn btn-danger" onclick="deleteSelectedSchedule()">🗑 Delete Selected</button>
+    <button class="btn btn-danger" onclick="deleteSelectedSchedules()">🗑 Delete Selected</button>
   </div>
   <div class="table-wrap">
-    <table><thead><tr><th style="width:50px">Type</th><th>RuleSet</th><th>Description</th><th style="width:70px">Action</th><th>Timing / Expires</th><th style="width:60px">ID</th></tr></thead>
+    <table><thead><tr><th style="width:36px"><input type="checkbox" id="sch-select-all" onchange="toggleSchSelectAll(this)"></th><th style="width:50px">Type</th><th>RuleSet</th><th>Description</th><th style="width:70px">Action</th><th>Timing / Expires</th><th style="width:60px">ID</th></tr></thead>
     <tbody id="sch-table"></tbody></table>
   </div>
 </div>
@@ -747,35 +754,37 @@ async function saveSchedule() {
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
-// ━━━ Schedules List ━━━
+// ━━━ Schedules List (with checkboxes) ━━━
 async function loadSchedules() {
   try {
     const res = await fetch('/api/schedules');
     const data = await res.json();
     const tb = document.getElementById('sch-table');
     tb.innerHTML = '';
+    document.getElementById('sch-select-all').checked = false;
     data.forEach(s => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${s.type}</td><td title="${s.rs_name}">${s.rs_name}</td><td title="${s.name}">${s.name}</td>
+      tr.innerHTML = `<td><input type="checkbox" class="sch-check" data-href="${s.href}"></td>
+        <td>${s.type}</td><td title="${s.rs_name}">${s.rs_name}</td><td title="${s.name}">${s.name}</td>
         <td><span class="badge ${s.action==='ALLOW'?'badge-on':(s.action==='BLOCK'?'badge-off':'')}">${s.action}</span></td>
         <td>${s.timing}</td><td>${s.id}</td>`;
-      tr.onclick = () => {
-        document.querySelectorAll('#sch-table tr').forEach(x => x.classList.remove('selected'));
-        tr.classList.add('selected');
-        selectedSchHref = s.href;
-      };
       tb.appendChild(tr);
     });
   } catch(e) { toast('Failed: ' + e.message, 'error'); }
 }
-async function deleteSelectedSchedule() {
-  if (!selectedSchHref) { toast('Select a schedule first.', 'error'); return; }
-  if (!confirm('Delete this schedule?')) return;
+function toggleSchSelectAll(master) {
+  document.querySelectorAll('.sch-check').forEach(cb => cb.checked = master.checked);
+}
+async function deleteSelectedSchedules() {
+  const checked = document.querySelectorAll('.sch-check:checked');
+  if (checked.length === 0) { toast('Select at least one schedule to delete.', 'error'); return; }
+  if (!confirm(`Delete ${checked.length} schedule(s)?`)) return;
+  const hrefs = Array.from(checked).map(cb => cb.dataset.href);
   try {
-    await fetch('/api/schedules/' + encodeURIComponent(selectedSchHref), {method:'DELETE'});
-    toast('Schedule deleted.');
-    selectedSchHref = null;
-    loadSchedules();
+    const res = await fetch('/api/schedules/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({hrefs}) });
+    const data = await res.json();
+    if (data.ok) { toast(`${data.count} schedule(s) deleted.`); loadSchedules(); }
+    else toast(data.error || 'Failed', 'error');
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 

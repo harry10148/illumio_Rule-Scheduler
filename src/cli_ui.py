@@ -154,103 +154,45 @@ class CLI:
         return f"{idx:<4} | {mark} | {rid:<18} | {status:<15} | {note:<30} | {src:<15} | {dst:<15} | {svc}"
 
     # ==========================================
-    # Unified Schedule Management
+    # Unified Schedule Management (List + Edit + Delete in one view)
     # ==========================================
     def schedule_management_ui(self):
         while True:
-            print(f"\n{Colors.HEADER}=== {t('sch_mgmt_title')} ==={Colors.RESET}")
-            print(f"  {t('sch_hint')}: {Colors.YELLOW}★{Colors.RESET}={t('sch_hint_rs')}, {Colors.CYAN}●{Colors.RESET}={t('sch_hint_child')}")
-            print(f"  1. {Colors.GREEN}{t('sch_browse')}{Colors.RESET}")
-            print(f"  2. {t('sch_list')}")
-            print(f"  3. {Colors.CYAN}{t('sch_edit')}{Colors.RESET}")
-            print(f"  4. {Colors.RED}{t('sch_delete')}{Colors.RESET}")
-            print(f"  q. {t('sch_back')}")
+            # Show the grouped list every iteration
+            self._list_grouped()
             
-            ans = clean_input(input(">> "))
+            # Show inline commands
+            print(f"\n  {Colors.BOLD}{t('sch_hint')}: {Colors.YELLOW}★{Colors.RESET}={t('sch_hint_rs')}, {Colors.CYAN}●{Colors.RESET}={t('sch_hint_child')}")
+            print(f"  {Colors.GREEN}a{Colors.RESET}={t('sch_browse')}  |  {Colors.CYAN}e <ID>{Colors.RESET}={t('sch_edit')}  |  {Colors.RED}d <ID,ID,...>{Colors.RESET}={t('sch_delete')}  |  r=Refresh  |  q={t('sch_back')}")
+            
+            ans = clean_input(input(">> ")).strip()
             if ans.lower() in ['q', 'b', '']: return
             
             try:
-                if ans == '1': self._browse_and_add()
-                elif ans == '2': self._list_grouped()
-                elif ans == '3': self._edit_schedule()
-                elif ans == '4': self._delete_schedule()
+                if ans.lower() == 'a':
+                    self._browse_and_add()
+                elif ans.lower() == 'r':
+                    continue  # will re-render the list
+                elif ans.lower().startswith('e '):
+                    # Edit: e <ID>
+                    edit_id = ans[2:].strip()
+                    if edit_id:
+                        self._edit_by_id(edit_id)
+                elif ans.lower().startswith('d '):
+                    # Delete: d <ID> or d <ID1,ID2,...>
+                    ids_str = ans[2:].strip()
+                    if ids_str:
+                        self._delete_by_ids(ids_str)
+                else:
+                    # If user just types a number, treat as edit
+                    if ans.isdigit():
+                        self._edit_by_id(ans)
+                    else:
+                        print(f"{Colors.RED}[-] {t('invalid_input')}{Colors.RESET}")
             except Exception as e:
                 import traceback
                 print(f"{Colors.RED}[ERROR] {e}{Colors.RESET}")
                 traceback.print_exc()
-
-    # ── 1. Browse & Add ──
-    def _browse_and_add(self):
-        print(f"\n{Colors.HEADER}--- {t('browse_title')} ---{Colors.RESET}")
-        
-        raw = clean_input(input(f"{t('browse_prompt')} "))
-        if raw.lower() in ['q', 'b']: return
-        
-        selected_rs = None
-        matches = []
-
-        if not raw:
-            print(f"{Colors.BLUE}[*] {t('browse_loading')}{Colors.RESET}")
-            matches = self.pce.get_all_rulesets()
-        elif raw.isdigit():
-            print(f"{Colors.BLUE}[*] {t('browse_locate')} {raw} ...{Colors.RESET}")
-            rs = self.pce.get_ruleset_by_id(raw)
-            if rs: selected_rs = rs
-            else:
-                print(f"{Colors.YELLOW}[-] {t('browse_not_found')}{Colors.RESET}")
-                matches = self.pce.search_rulesets(raw)
-        else:
-            matches = self.pce.search_rulesets(raw)
-
-        if not selected_rs:
-            if not matches: return print(f"{Colors.RED}[-] {t('browse_no_result')}{Colors.RESET}")
-            header = f"{t('hdr_no'):<4} | {t('hdr_sch'):<1} | {t('hdr_id'):<8} | {t('hdr_status'):<6} | {t('hdr_rules'):<9} | {t('hdr_name')}"
-            selected_rs = paginate_and_select(matches, self.format_ruleset_row, title="RuleSets", header_str=header)
-            if not selected_rs: return
-
-        rs_href = selected_rs['href']
-        rs_name = selected_rs['name']
-        
-        print(f"\n{Colors.GREEN}[+] {t('browse_selected')} {rs_name} (ID: {extract_id(rs_href)}){Colors.RESET}")
-        print(f"1. {t('browse_opt_rs')}")
-        print(f"2. {t('browse_opt_rule')}")
-        
-        sub_act = clean_input(input(f"{t('browse_action')} "))
-        if sub_act.lower() in ['q', 'b']: return
-
-        target_href, target_name, is_rs = "", "", False
-        meta_src, meta_dst, meta_svc, meta_rs = "All", "All", "All", rs_name
-
-        if sub_act == '1':
-            target_href, target_name, is_rs = rs_href, f"{rs_name}", True
-
-        elif sub_act == '2':
-            full_rs = self.pce.get_ruleset_by_id(extract_id(rs_href))
-            rules = full_rs.get('rules', [])
-            if not rules: return print(f"{Colors.RED}[-] {t('browse_no_rules')}{Colors.RESET}")
-
-            header = f"{t('hdr_no'):<4} | {t('hdr_sch'):<1} | {t('hdr_id'):<6} | {t('hdr_status'):<6} | {t('hdr_note'):<30} | {t('hdr_source'):<15} | {t('hdr_dest'):<15} | {t('hdr_service')}"
-            r = paginate_and_select(rules, self.format_rule_row, title=f"Rules ({rs_name})", header_str=header)
-            if not r: return
-
-            target_href, target_name, is_rs = r['href'], r.get('description') or f"Rule {extract_id(r['href'])}", False
-            
-            dest_field = r.get('destinations', r.get('consumers', []))
-            meta_src = self.pce.resolve_actor_str(dest_field)
-            meta_dst = self.pce.resolve_actor_str(r.get('providers', []))
-            meta_svc = self.pce.resolve_service_str(r.get('ingress_services', []))
-        else: return
-
-        if target_href in self.db.get_all():
-            print(f"{Colors.YELLOW}[!] {t('sch_exists_warn')}{Colors.RESET}")
-            if clean_input(input(f"{t('sch_confirm')} ")).lower() != 'y': return
-
-        db_entry, note_msg = self._collect_schedule_params(target_name, is_rs, meta_rs, meta_src, meta_dst, meta_svc)
-        if not db_entry: return
-
-        self.db.put(target_href, db_entry)
-        self.pce.update_rule_note(target_href, note_msg)
-        print(f"\n{Colors.GREEN}[+] {t('sch_saved')} (ID: {extract_id(target_href)}){Colors.RESET}")
 
     # ── Shared: Collect Schedule Parameters ──
     def _collect_schedule_params(self, target_name, is_rs, meta_rs, meta_src, meta_dst, meta_svc, existing=None):
@@ -358,11 +300,85 @@ class CLI:
         
         return None, None
 
-    # ── 2. List Grouped ──
+    # ── 1. Browse & Add ──
+    def _browse_and_add(self):
+        print(f"\n{Colors.HEADER}--- {t('browse_title')} ---{Colors.RESET}")
+        
+        raw = clean_input(input(f"{t('browse_prompt')} "))
+        if raw.lower() in ['q', 'b']: return
+        
+        selected_rs = None
+        matches = []
+
+        if not raw:
+            print(f"{Colors.BLUE}[*] {t('browse_loading')}{Colors.RESET}")
+            matches = self.pce.get_all_rulesets()
+        elif raw.isdigit():
+            print(f"{Colors.BLUE}[*] {t('browse_locate')} {raw} ...{Colors.RESET}")
+            rs = self.pce.get_ruleset_by_id(raw)
+            if rs: selected_rs = rs
+            else:
+                print(f"{Colors.YELLOW}[-] {t('browse_not_found')}{Colors.RESET}")
+                matches = self.pce.search_rulesets(raw)
+        else:
+            matches = self.pce.search_rulesets(raw)
+
+        if not selected_rs:
+            if not matches: return print(f"{Colors.RED}[-] {t('browse_no_result')}{Colors.RESET}")
+            header = f"{t('hdr_no'):<4} | {t('hdr_sch'):<1} | {t('hdr_id'):<8} | {t('hdr_status'):<6} | {t('hdr_rules'):<9} | {t('hdr_name')}"
+            selected_rs = paginate_and_select(matches, self.format_ruleset_row, title="RuleSets", header_str=header)
+            if not selected_rs: return
+
+        rs_href = selected_rs['href']
+        rs_name = selected_rs['name']
+        
+        print(f"\n{Colors.GREEN}[+] {t('browse_selected')} {rs_name} (ID: {extract_id(rs_href)}){Colors.RESET}")
+        print(f"1. {t('browse_opt_rs')}")
+        print(f"2. {t('browse_opt_rule')}")
+        
+        sub_act = clean_input(input(f"{t('browse_action')} "))
+        if sub_act.lower() in ['q', 'b']: return
+
+        target_href, target_name, is_rs = "", "", False
+        meta_src, meta_dst, meta_svc, meta_rs = "All", "All", "All", rs_name
+
+        if sub_act == '1':
+            target_href, target_name, is_rs = rs_href, f"{rs_name}", True
+
+        elif sub_act == '2':
+            full_rs = self.pce.get_ruleset_by_id(extract_id(rs_href))
+            rules = full_rs.get('rules', [])
+            if not rules: return print(f"{Colors.RED}[-] {t('browse_no_rules')}{Colors.RESET}")
+
+            header = f"{t('hdr_no'):<4} | {t('hdr_sch'):<1} | {t('hdr_id'):<6} | {t('hdr_status'):<6} | {t('hdr_note'):<30} | {t('hdr_source'):<15} | {t('hdr_dest'):<15} | {t('hdr_service')}"
+            r = paginate_and_select(rules, self.format_rule_row, title=f"Rules ({rs_name})", header_str=header)
+            if not r: return
+
+            target_href, target_name, is_rs = r['href'], r.get('description') or f"Rule {extract_id(r['href'])}", False
+            
+            dest_field = r.get('destinations', r.get('consumers', []))
+            meta_src = self.pce.resolve_actor_str(dest_field)
+            meta_dst = self.pce.resolve_actor_str(r.get('providers', []))
+            meta_svc = self.pce.resolve_service_str(r.get('ingress_services', []))
+        else: return
+
+        if target_href in self.db.get_all():
+            print(f"{Colors.YELLOW}[!] {t('sch_exists_warn')}{Colors.RESET}")
+            if clean_input(input(f"{t('sch_confirm')} ")).lower() != 'y': return
+
+        db_entry, note_msg = self._collect_schedule_params(target_name, is_rs, meta_rs, meta_src, meta_dst, meta_svc)
+        if not db_entry: return
+
+        self.db.put(target_href, db_entry)
+        self.pce.update_rule_note(target_href, note_msg)
+        print(f"\n{Colors.GREEN}[+] {t('sch_saved')} (ID: {extract_id(target_href)}){Colors.RESET}")
+
+    # ── List Grouped ──
     def _list_grouped(self):
         db_data = self.db.get_all()
         if not db_data: 
-            return print(f"\n{Colors.YELLOW}[-] {t('list_no_schedule')}{Colors.RESET}")
+            print(f"\n{Colors.YELLOW}[-] {t('list_no_schedule')}{Colors.RESET}")
+            return
         
         groups = {}
         for href, conf in db_data.items():
@@ -437,23 +453,17 @@ class CLI:
                 
         print("="*120)
 
-    # ── 3. Edit Schedule ──
-    def _edit_schedule(self):
-        self._list_grouped()
+    # ── Edit by ID ──
+    def _edit_by_id(self, edit_id):
         db_data = self.db.get_all()
-        if not db_data: return
-        
-        k = clean_input(input(f"\n{t('edit_prompt')} "))
-        if k.lower() in ['q', 'b', '']: return
-        
-        found = [x for x in db_data if extract_id(x) == k]
+        found = [x for x in db_data if extract_id(x) == edit_id]
         if not found:
             return print(f"{Colors.RED}[-] {t('edit_not_found')}{Colors.RESET}")
         
         href = found[0]
         existing = db_data[href]
         
-        print(f"\n{Colors.CYAN}[*] {t('edit_editing')} {existing.get('detail_name', existing['name'])} (ID: {k}){Colors.RESET}")
+        print(f"\n{Colors.CYAN}[*] {t('edit_editing')} {existing.get('detail_name', existing['name'])} (ID: {edit_id}){Colors.RESET}")
         print(f"{Colors.GREY}{t('sch_keep_enter')}{Colors.RESET}")
         
         target_name = existing.get('detail_name', existing.get('name', ''))
@@ -470,30 +480,34 @@ class CLI:
         self.pce.update_rule_note(href, note_msg)
         print(f"\n{Colors.GREEN}[+] {t('sch_updated')} (ID: {extract_id(href)}){Colors.RESET}")
 
-    # ── 4. Delete Schedule ──
-    def _delete_schedule(self):
-        self._list_grouped()
+    # ── Delete by IDs (multi-delete) ──
+    def _delete_by_ids(self, ids_str):
         db_data = self.db.get_all()
-        if not db_data: return
+        ids = [x.strip() for x in ids_str.replace(' ', ',').split(',') if x.strip()]
         
-        k = clean_input(input(f"\n{t('delete_prompt')} "))
-        if k.lower() in ['q', 'b', '']: return
+        to_delete = []
+        for k in ids:
+            found = [x for x in db_data if extract_id(x) == k]
+            if found:
+                href = found[0]
+                conf = db_data[href]
+                to_delete.append((href, conf, k))
+                print(f"  {t('delete_target')} {conf.get('detail_name', conf['name'])} (ID: {k})")
+            else:
+                print(f"  {Colors.RED}[-] ID {k}: {t('delete_not_found')}{Colors.RESET}")
         
-        found = [x for x in db_data if extract_id(x) == k]
+        if not to_delete:
+            return
         
-        if found:
-            href = found[0]
-            conf = db_data[href]
-            print(f"  {t('delete_target')} {conf.get('detail_name', conf['name'])} (ID: {k})")
-            if clean_input(input(f"  {t('delete_confirm')} ")).lower() != 'y': return
-            
-            print(f"[*] {t('delete_cleaning')}")
+        if clean_input(input(f"\n  {t('delete_confirm')} ({len(to_delete)} items) ")).lower() != 'y':
+            return
+        
+        for href, conf, k in to_delete:
             try:
                 self.pce.update_rule_note(href, "", remove=True)
             except Exception: pass
-            
             self.db.delete(href)
-            print(f"{Colors.GREEN}[OK] {t('delete_done')}{Colors.RESET}")
+            print(f"  {Colors.GREEN}[OK] ID {k} {t('delete_done')}{Colors.RESET}")
         else:
             print(f"{Colors.RED}[-] {t('delete_not_found')}{Colors.RESET}")
 
