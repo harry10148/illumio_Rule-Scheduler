@@ -2,7 +2,6 @@
 
 ![Version](https://img.shields.io/badge/Version-1.0.0-blue)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-gold?logo=python&logoColor=white)
-![Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen)
 
 An automated rule scheduling tool for **Illumio Core (PCE)**. Supports **Web GUI**, **CLI**, and **Daemon** modes. Core engine uses only Python standard library — Flask is the only optional dependency (for Web GUI only).
 
