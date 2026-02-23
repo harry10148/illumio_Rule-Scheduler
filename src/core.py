@@ -12,11 +12,6 @@ import ssl
 import base64
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Disable SSL verification globally for self-signed PCE certs
-_SSL_CTX = ssl.create_default_context()
-_SSL_CTX.check_hostname = False
-_SSL_CTX.verify_mode = ssl.CERT_NONE
-
 # ==========================================
 # 0. Color Engine & Formatters (Shared)
 # ==========================================
@@ -188,7 +183,12 @@ class APIResponse:
         self._body: bytes = body
     
     def json(self):
-        return json.loads(self._body.decode('utf-8'))
+        try:
+            if not self._body or self.status_code == 204:
+                return {}
+            return json.loads(self._body.decode('utf-8'))
+        except json.JSONDecodeError:
+            return {}
     
     @property
     def text(self):
@@ -220,8 +220,13 @@ class PCEClient:
         body = json.dumps(payload).encode('utf-8') if payload else None
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
         
+        ctx = ssl.create_default_context()
+        if not self.cfg.config.get('ssl_verify', False):
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            
         try:
-            resp = urllib.request.urlopen(req, timeout=self.timeout, context=_SSL_CTX)
+            resp = urllib.request.urlopen(req, timeout=self.timeout, context=ctx)
             return APIResponse(resp.status, resp.read())
         except urllib.error.HTTPError as e:
             return APIResponse(e.code, e.read() if e.fp else b'')
@@ -241,19 +246,19 @@ class PCEClient:
     def update_label_cache(self, silent=False):
         if not self.cfg.is_ready(): return
         try:
-            r1 = self._api_get(f"/orgs/{self.cfg.config['org_id']}/labels")
+            r1 = self._api_get(f"/orgs/{self.cfg.config['org_id']}/labels?max_results=10000")
             if r1 and r1.status_code == 200:
                 for i in r1.json(): 
                     self.label_cache[i['href']] = f"{i.get('key')}:{i.get('value')}"
             
-            r2 = self._api_get(f"/orgs/{self.cfg.config['org_id']}/sec_policy/draft/ip_lists")
+            r2 = self._api_get(f"/orgs/{self.cfg.config['org_id']}/sec_policy/draft/ip_lists?max_results=10000")
             if r2 and r2.status_code == 200:
                 for i in r2.json():
                     val = f"[IPList] {i.get('name')}"
                     self.label_cache[i['href']] = val
                     self.label_cache[i['href'].replace('/draft/', '/active/')] = val
                     
-            r3 = self._api_get(f"/orgs/{self.cfg.config['org_id']}/sec_policy/draft/services")
+            r3 = self._api_get(f"/orgs/{self.cfg.config['org_id']}/sec_policy/draft/services?max_results=10000")
             if r3 and r3.status_code == 200:
                 for i in r3.json():
                     name = i.get('name')
@@ -300,7 +305,7 @@ class PCEClient:
     def get_all_rulesets(self, force_refresh=False):
         if self.ruleset_cache and not force_refresh:
             return self.ruleset_cache
-        res = self._api_get(f"/orgs/{self.cfg.config['org_id']}/sec_policy/draft/rule_sets")
+        res = self._api_get(f"/orgs/{self.cfg.config['org_id']}/sec_policy/draft/rule_sets?max_results=10000")
         if res and res.status_code == 200: 
             self.ruleset_cache = res.json()
             return self.ruleset_cache
